@@ -288,6 +288,36 @@ Random.Walk.Restart.Multiplex <- function(...) {
 Random.Walk.Restart.Multiplex.default <- function(x, MultiplexObject, Seeds, 
     r=0.7,tau,weights=1,MeanType="Geometric", DispResults="TopScores", ...){
         
+    
+    # If any Tau == 0, then we ablate the layer entirely. 
+    # check if any tau values are 0
+    zero_tau_exists <- any(tau == 0)
+    if (zero_tau_exists){
+	# get the desired layers of the multiplex
+	tau_mask <- tau > 0	
+        multiplex_layers <- MultiplexObject[1:MultiplexObject$Number_of_Layers]
+	desired_layers <- multiplex_layers[tau_mask]
+
+	# Calculate original delta
+	L <- MultiplexObject$Number_of_Layers
+	inter_layer_connection_index_start <- nrow(x)/L + 1
+        inter_layer_connection_index_end <- nrow(x)
+        original_delta <- sum(
+                x[seq(inter_layer_connection_index_start,
+                      inter_layer_connection_index_end ), 1]) 
+
+	# Recreate our multiplex without ablated layers. 
+	MultiplexObject <- create.multiplex(desired_layers)
+	adjacency <- compute.adjacency.matrix(MultiplexObject, original_delta) 
+	x <- normalize.multiplex.adjacency(adjacency)
+    }
+
+    # layer = the index @ tau = 0
+
+
+
+
+
     ### We control the different values.
     if (!is(x,"dgCMatrix")){
         stop("Not a dgCMatrix object of Matrix package")
