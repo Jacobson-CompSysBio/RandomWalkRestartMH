@@ -310,6 +310,8 @@ Random.Walk.Restart.Multiplex.default <- function(x, MultiplexObject, Seeds,
 	MultiplexObject <- create.multiplex(desired_layers)
 	adjacency <- compute.adjacency.matrix(MultiplexObject, original_delta) 
 	x <- normalize.multiplex.adjacency(adjacency)
+	
+	tau <- tau[ tau_mask ] 
     }
 
     # layer = the index @ tau = 0
