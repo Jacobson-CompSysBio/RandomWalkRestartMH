@@ -110,6 +110,7 @@ compute.adjacency.matrix <- function(x,delta = 0.5)
     combinations <- expand.grid(seq_len(L), seq_len(L))
     filtered_combinations <- subset(combinations, Var1 != Var2)
 
+    message("Modifying matrix...")
     modified_matrices <- foreach(column = seq_len(L), .combine = 'cbind') %dopar% {
         # get rows that match the 
         column_mask_for_rows <- filtered_combinations$Var2 == column
