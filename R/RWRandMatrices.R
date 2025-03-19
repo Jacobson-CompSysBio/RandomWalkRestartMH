@@ -62,7 +62,7 @@ compute.adjacency.matrix <- function(x,delta = 0.5) {
   counter <- 0
   Layers_List <- lapply(x[Layers_Names],function(x){
 
-    counter <- counter + 1
+    counter <<- counter + 1
     if (is_weighted(x)) { 
       Adjacency_Layer <- as_adjacency_matrix(x, sparse = TRUE, attr = "weight")
     } else {
