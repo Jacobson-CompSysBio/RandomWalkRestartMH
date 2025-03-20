@@ -516,7 +516,6 @@ compute.transition.matrix <- function(x,lambda = 0.5, delta1=0.5,delta2=0.5)
   message("Computing adjacency matrix of the second Multiplex network...")
   ## We have to sort the adjacency matrix
   AdjMatrix_Multiplex2 <- compute.adjacency.matrix(x$Multiplex2,delta2)
-  
   ## Transition Matrix for the inter-subnetworks links
   message("Computing inter-subnetworks transitions...")
   Transition_Multiplex1_Multiplex2 <- 
@@ -547,7 +546,7 @@ compute.transition.matrix <- function(x,lambda = 0.5, delta1=0.5,delta2=0.5)
       rbind(Transition_Multiplex_Heterogeneous_Matrix_1,
             Transition_Multiplex_Heterogeneous_Matrix_2)
   
-  return(Transition_Multiplex_Heterogeneous_Matrix)
+  return(t(Transition_Multiplex_Heterogeneous_Matrix))
 }
 
 ## Roxy Documentation comments
