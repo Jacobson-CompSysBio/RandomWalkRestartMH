@@ -77,6 +77,8 @@ compute.adjacency.matrix <- function(x,delta = 0.5) {
       paste0(rownames(Adjacency_Layer), "_", counter)
 
     Adjacency_Layer
+
+    Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer)
   })
 
   ## We impose delta=0 in the monoplex case.
@@ -144,6 +146,8 @@ compute.adjacency.matrix <- function(x,delta = 0.5) {
   SupraAdjacencyMatrix = modified_matrices
 
   stopCluster(cl)
+
+  print(SupraAdjacencyMatrix)
 
   SupraAdjacencyMatrix <- as(SupraAdjacencyMatrix, "dgCMatrix")
 
@@ -511,42 +515,100 @@ compute.transition.matrix <- function(x,lambda = 0.5, delta1=0.5,delta2=0.5)
   SupraBipartiteMatrix <- x$BipartiteNetwork
   
   message("Computing adjacency matrix of the first Multiplex network...")
-  AdjMatrix_Multiplex1 <- compute.adjacency.matrix(x$Multiplex1,delta1)
+  AdjMatrix_Multiplex1 <- compute.adjacency.matrix(x$Multiplex1, delta1)
   
   message("Computing adjacency matrix of the second Multiplex network...")
   ## We have to sort the adjacency matrix
-  AdjMatrix_Multiplex2 <- compute.adjacency.matrix(x$Multiplex2,delta2)
-  ## Transition Matrix for the inter-subnetworks links
-  message("Computing inter-subnetworks transitions...")
-  Transition_Multiplex1_Multiplex2 <- 
-      get.transition.multiplex1.multiplex2(Number_Nodes_1,Number_Layers_1,
-          Number_Nodes_2,Number_Layers_2,SupraBipartiteMatrix,lambda)
+  AdjMatrix_Multiplex2 <- compute.adjacency.matrix(x$Multiplex2, delta2)
+
+  Transition_Multiplex1_Multiplex2 <- SupraBipartiteMatrix
+  Transition_Multiplex2_Multiplex1 <- t(SupraBipartiteMatrix)
+
+  ## Normalize
+  # row_sums <- rowSums(AdjMatrix_Multiplex1)
+  # i <- seq(nrow(AdjMatrix_Multiplex1))
+  # i <- i[row_sums != 0]
+  # AdjMatrix_Multiplex1[i,] <- AdjMatrix_Multiplex1[i,] / row_sums[i]
+
+  # row_sums <- rowSums(AdjMatrix_Multiplex2)
+  # i <- seq(nrow(AdjMatrix_Multiplex2))
+  # i <- i[row_sums != 0]
+  # AdjMatrix_Multiplex2[i,] <- AdjMatrix_Multiplex2[i,] / row_sums[i]
+
+  row_sums <- rowSums(Transition_Multiplex1_Multiplex2)
+  i <- seq(nrow(Transition_Multiplex1_Multiplex2))
+  i <- i[row_sums != 0]
+  Transition_Multiplex1_Multiplex2[i,] <- Transition_Multiplex1_Multiplex2[i,] / row_sums[i]
+
+  row_sums <- rowSums(Transition_Multiplex2_Multiplex1)
+  i <- seq(nrow(Transition_Multiplex2_Multiplex1))
+  i <- i[row_sums != 0]
+  Transition_Multiplex2_Multiplex1[i,] <- Transition_Multiplex2_Multiplex1[i,] / row_sums[i]
+
+  # column_sums <- colSums(AdjMatrix_Multiplex2)
+  # j <- seq(ncol(AdjMatrix_Multiplex2))
+  # j <- j[column_sums != 0]
+  # AdjMatrix_Multiplex2[,j] <- AdjMatrix_Multiplex2[,j] / column_sums[j]
+
+  # column_sums <- colSums(Transition_Multiplex1_Multiplex2)
+  # j <- seq(ncol(Transition_Multiplex1_Multiplex2))
+  # j <- j[column_sums != 0]
+  # Transition_Multiplex1_Multiplex2[,j] <- Transition_Multiplex1_Multiplex2[,j] / column_sums[j]
+
+  # column_sums <- colSums(Transition_Multiplex2_Multiplex1)
+  # j <- seq(ncol(Transition_Multiplex2_Multiplex1))
+  # j <- j[column_sums != 0]
+  # Transition_Multiplex2_Multiplex1[,j] <- Transition_Multiplex2_Multiplex1[,j] / column_sums[j]
+
+  # Update matrices for lamnda
+  # AdjMatrix_Multiplex1 <- AdjMatrix_Multiplex1 * (1 - lambda)
+  # AdjMatrix_Multiplex2 <- AdjMatrix_Multiplex2 * (1 - lambda)
+  Transition_Multiplex1_Multiplex2 <- Transition_Multiplex1_Multiplex2 * lambda
+  Transition_Multiplex2_Multiplex1 <- Transition_Multiplex2_Multiplex1 * lambda
+
+  ## Combine matrices
+  M1 <- cbind(AdjMatrix_Multiplex1, Transition_Multiplex1_Multiplex2)
+  M2 <- cbind(Transition_Multiplex2_Multiplex1, AdjMatrix_Multiplex2)
+  Transition_Multiplex_Heterogeneous_Matrix <- rbind(M1, M2)
+
+  # Final normalizing (handles the case where a column in any matrix has no elements)
+  # column_sums <- colSums(Transition_Multiplex_Heterogeneous_Matrix)
+  # j <- seq(ncol(Transition_Multiplex_Heterogeneous_Matrix))
+  # j <- j[column_sums != 0]
+  # Transition_Multiplex_Heterogeneous_Matrix[,j] <- Transition_Multiplex_Heterogeneous_Matrix[,j] / column_sums[j]
+
+  return(Transition_Multiplex_Heterogeneous_Matrix)
+  # ## Transition Matrix for the inter-subnetworks links
+  # message("Computing inter-subnetworks transitions...")
+  # Transition_Multiplex1_Multiplex2 <- 
+  #     get.transition.multiplex1.multiplex2(Number_Nodes_1,Number_Layers_1,
+  #         Number_Nodes_2,Number_Layers_2,SupraBipartiteMatrix,lambda)
   
-  Transition_Multiplex2_Multiplex1 <- 
-      get.transition.multiplex2.multiplex1(Number_Nodes_1,Number_Layers_1,
-          Number_Nodes_2, Number_Layers_2, SupraBipartiteMatrix,lambda)
+  # Transition_Multiplex2_Multiplex1 <- 
+  #     get.transition.multiplex2.multiplex1(Number_Nodes_1,Number_Layers_1,
+  #         Number_Nodes_2, Number_Layers_2, SupraBipartiteMatrix,lambda)
   
-  ## Transition Matrix for the intra-subnetworks links
-  message("Computing intra-subnetworks transitions...")
-  Transition_Multiplex_Network1 <- 
-      get.transition.multiplex(Number_Nodes_1, Number_Layers_1, lambda, 
-          AdjMatrix_Multiplex1,SupraBipartiteMatrix)
-  Transition_Multiplex_Network2 <- 
-      get.transition.multiplex(Number_Nodes_2,Number_Layers_2, lambda,
-          t(AdjMatrix_Multiplex2),t(SupraBipartiteMatrix))
+  # ## Transition Matrix for the intra-subnetworks links
+  # message("Computing intra-subnetworks transitions...")
+  # Transition_Multiplex_Network1 <- 
+  #     get.transition.multiplex(Number_Nodes_1, Number_Layers_1, lambda, 
+  #         AdjMatrix_Multiplex1,SupraBipartiteMatrix)
+  # Transition_Multiplex_Network2 <- 
+  #     get.transition.multiplex(Number_Nodes_2,Number_Layers_2, lambda,
+  #         t(AdjMatrix_Multiplex2),t(SupraBipartiteMatrix))
   
-  ## We generate the global transiction matrix and we return it.
-  message("Combining inter e intra layer probabilities into the global 
-        Transition Matix")
-  Transition_Multiplex_Heterogeneous_Matrix_1 <-
-      cbind(Transition_Multiplex_Network1, Transition_Multiplex1_Multiplex2)
-  Transition_Multiplex_Heterogeneous_Matrix_2 <-
-      cbind(Transition_Multiplex2_Multiplex1, Transition_Multiplex_Network2)
-  Transition_Multiplex_Heterogeneous_Matrix <-
-      rbind(Transition_Multiplex_Heterogeneous_Matrix_1,
-            Transition_Multiplex_Heterogeneous_Matrix_2)
+  # ## We generate the global transiction matrix and we return it.
+  # message("Combining inter e intra layer probabilities into the global 
+  #       Transition Matix")
+  # Transition_Multiplex_Heterogeneous_Matrix_1 <-
+  #     cbind(Transition_Multiplex_Network1, Transition_Multiplex1_Multiplex2)
+  # Transition_Multiplex_Heterogeneous_Matrix_2 <-
+  #     cbind(Transition_Multiplex2_Multiplex1, Transition_Multiplex_Network2)
+  # Transition_Multiplex_Heterogeneous_Matrix <-
+  #     rbind(Transition_Multiplex_Heterogeneous_Matrix_1,
+  #           Transition_Multiplex_Heterogeneous_Matrix_2)
   
-  return(t(Transition_Multiplex_Heterogeneous_Matrix))
+  # return(t(Transition_Multiplex_Heterogeneous_Matrix))
 }
 
 ## Roxy Documentation comments
