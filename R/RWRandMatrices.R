@@ -548,7 +548,7 @@ compute.transition.matrix <- function(x,lambda = 0.5, delta1=0.5,delta2=0.5)
         rbind(Transition_Multiplex_Heterogeneous_Matrix_1,
               Transition_Multiplex_Heterogeneous_Matrix_2)
     
-    return(Transition_Multiplex_Heterogeneous_Matrix)
+    return(t(Transition_Multiplex_Heterogeneous_Matrix))
 }
 
 ## Roxy Documentation comments
