@@ -357,7 +357,7 @@ compute.transition.matrix.homogeneous <- function(x,
     col_ini =  Position_ini_col[column]
     col_end =  Position_end_col[column]
 
-    modified_matrix <- SupraAdjacencyMatrix[, col_ini:col_end]
+    modified_matrix <- TransMatrix[, col_ini:col_end]
 
     col_vector <- c()
     row_vector <- c()
