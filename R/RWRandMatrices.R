@@ -233,8 +233,53 @@ row.normalize.matrix <- function(x) {
   return(x)
 }
 
+#' Computes the transition matrix of a multiplex network
+#'
+#' \code{compute.transition.matrix.homogeneous} is a function to compute the
+#' transition matrix of a multiplex network provided as a \code{Multiplex} object.
+#'
+#' @usage compute.transition.matrix.homogeneous(x,delta = 0.5,transpose = TRUE)
+#'
+#' @details The parameter \code{delta} sets the probability to change between
+#' layers at the next step. If delta = 0, the particle will always remain
+#' in the same layer after a non-restart iteration. On the other hand, if
+#' delta = 1, the particle will always change between layers, therefore
+#' not following the specific edges of each layer.
+#'
+#' @param x A \code{Multiplex} object describing a multiplex network generated
+#' by the function \code{create.multiplex}.
+#' @param delta A numeric value between 0 and 1. It sets the probability
+#' of performing inter-layer versus intra-layer transitions. It is set by
+#' default to 0.5. See more details below.
+#' @param tranpose A boolean flag. It is used to return a transposed a matrix
+#' that is transposed such that the columns are normalized.
+#'
+#' @return A square sparse adjacency matrix created with the \code{Matrix}
+#' package.
+#'
+#' @seealso \code{\link{create.multiplex},\link{row.normalize.matrix},
+#' \link{compute.transition.matrix.heterogeneous}}
+#'
+#' @author Alberto Valdeolivas Urbelz \email{alvaldeolivas@@gmail.com}
+#'
+#' @examples
+#' m1 <- igraph::graph(c(1,2,1,3,2,3), directed = FALSE)
+#' m2 <- igraph::graph(c(1,3,2,3,3,4,1,4), directed = FALSE)
+#' multiObject <- create.multiplex(list(m1=m1,m2=m2))
+#' compute.transition.matrix.homogeneous(multiObject)
+#'
+#'@import igraph
+#'@import Matrix
+#'@import parallel
+#'@import doParallel
+#'@import foreach
+#'@import iterators
+#'@importFrom methods as
 #'@export
-compute.transition.matrix.homogeneous <- function(x, delta = 0.5, transpose = TRUE) {
+
+compute.transition.matrix.homogeneous <- function(x,
+                                                  delta = 0.5,
+                                                  transpose = TRUE) {
   if (!isMultiplex(x)) {
     stop("Not a Multiplex object")
   }
@@ -266,16 +311,16 @@ compute.transition.matrix.homogeneous <- function(x, delta = 0.5, transpose = TR
     Adjacency_Layer
   })
 
-  ## We impose delta=0 in the monoplex case.
+  # If L==1, we skip the intra-layer computation
   if (L == 1) {
-    SupraAdjacencyMatrix <- bdiag(unlist(Layers_List))
+    TransMatrix <- bdiag(unlist(Layers_List))
 
     if (transpose) {
-      SupraAdjacencyMatrix <- t(SupraAdjacencyMatrix)
+      TransMatrix <- t(TransMatrix)
     }
 
-    SupraAdjacencyMatrix <- as(SupraAdjacencyMatrix, "dgCMatrix")
-    return(SupraAdjacencyMatrix)
+    TransMatrix <- as(TransMatrix, "dgCMatrix")
+    return(TransMatrix)
   }
 
   cl <- makeCluster(detectCores())
@@ -287,9 +332,9 @@ compute.transition.matrix.homogeneous <- function(x, delta = 0.5, transpose = TR
   MyRowNames <- unlist(lapply(Layers_List, function(x) unlist(rownames(x))))
   names(MyColNames) <- c()
   names(MyRowNames) <- c()
-  SupraAdjacencyMatrix <- (1 - delta) * (bdiag(unlist(Layers_List)))
-  colnames(SupraAdjacencyMatrix) <- MyColNames
-  rownames(SupraAdjacencyMatrix) <- MyRowNames
+  TransMatrix <- (1 - delta) * (bdiag(unlist(Layers_List)))
+  colnames(TransMatrix) <- MyColNames
+  rownames(TransMatrix) <- MyRowNames
 
   offdiag <- (delta / (L - 1)) * Idem_Matrix
 
@@ -299,7 +344,7 @@ compute.transition.matrix.homogeneous <- function(x, delta = 0.5, transpose = TR
   j <- seq_len(L)
   Position_ini_col <- 1 + (j - 1) * N
   Position_end_col <- N + (j - 1) * N
-  
+
   combinations <- expand.grid(seq_len(L), seq_len(L))
   filtered_combinations <- subset(combinations, Var1 != Var2)
 
@@ -313,7 +358,6 @@ compute.transition.matrix.homogeneous <- function(x, delta = 0.5, transpose = TR
     col_end =  Position_end_col[column]
 
     modified_matrix <- SupraAdjacencyMatrix[, col_ini:col_end]
-
 
     col_vector <- c()
     row_vector <- c()
@@ -332,27 +376,70 @@ compute.transition.matrix.homogeneous <- function(x, delta = 0.5, transpose = TR
     return(drop0(modified_matrix))
   }
 
-  SupraAdjacencyMatrix = modified_matrices
+  TransMatrix = modified_matrices
 
   stopCluster(cl)
 
   # Row normalize to account for nodes with zero edges in a layer
-  SupraAdjacencyMatrix <- row.normalize.matrix(SupraAdjacencyMatrix)
+  TransMatrix <- row.normalize.matrix(TransMatrix)
 
   if (transpose) {
-    SupraAdjacencyMatrix <- t(SupraAdjacencyMatrix)
+    TransMatrix <- t(TransMatrix)
   }
 
-  SupraAdjacencyMatrix <- as(SupraAdjacencyMatrix, "dgCMatrix")
+  TransMatrix <- as(TransMatrix, "dgCMatrix")
 
-  return(SupraAdjacencyMatrix)
+  return(TransMatrix)
 }
 
-#' @export
+#' Computes the transition matrix of a heterogeneous multiplex network
+#'
+#' \code{compute.transition.matrix.heterogeneous} is a function to compute the
+#' transition matrix of a multiplex network provided as a \code{Multiplex} object.
+#'
+#' @usage compute.transition.matrix.heterogeneous(x,delta = 0.5,transpose = TRUE)
+#'
+#' @details The parameter \code{delta} sets the probability to change between
+#' layers at the next step. If delta = 0, the particle will always remain
+#' in the same layer after a non-restart iteration. On the other hand, if
+#' delta = 1, the particle will always change between layers, therefore
+#' not following the specific edges of each layer.
+#'
+#' @param x A \code{Multiplex} object describing a multiplex network generated
+#' by the function \code{create.multiplex}.
+#' @param delta A numeric value between 0 and 1. It sets the probability
+#' of performing inter-layer versus intra-layer transitions. It is set by
+#' default to 0.5. See more details below.
+#' @param tranpose A boolean flag. It is used to return a transposed a matrix
+#' that is transposed such that the columns are normalized.
+#'
+#' @return A square sparse adjacency matrix created with the \code{Matrix}
+#' package.
+#'
+#' @seealso \code{\link{create.multiplex},\link{row.normalize.matrix},
+#' \link{compute.transition.matrix.homogeneous}}
+#'
+#' @author Alberto Valdeolivas Urbelz \email{alvaldeolivas@@gmail.com}
+#'
+#' @examples
+#' m1 <- igraph::graph(c(1,2,1,3,2,3), directed = FALSE)
+#' m2 <- igraph::graph(c(1,3,2,3,3,4,1,4), directed = FALSE)
+#' multiObject <- create.multiplex(list(m1=m1,m2=m2))
+#' compute.transition.matrix.heterogeneous(multiObject)
+#'
+#'@import igraph
+#'@import Matrix
+#'@import parallel
+#'@import doParallel
+#'@import foreach
+#'@import iterators
+#'@importFrom methods as
+#'@export
+
 compute.transition.matrix.heterogeneous <- function(x,
-                                                    lambda = 0.5,
                                                     delta1 = 0.5,
-                                                    delta2 = 0.5) {
+                                                    delta2 = 0.5,
+                                                    lambda = 0.5) {
   if (!isMultiplexHet(x)) {
     stop("Not a Multiplex Heterogeneous object")
   }
