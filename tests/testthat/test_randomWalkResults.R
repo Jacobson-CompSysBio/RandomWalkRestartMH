@@ -64,4 +64,3 @@ test_that("Random Walk Results are correct", {
                 RWRMH_Multi2ExpectedResults,
                 tolerance = 0.00001)
 })
-
