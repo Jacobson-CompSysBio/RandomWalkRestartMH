@@ -61,7 +61,7 @@ create.multiplex.default <- function(LayersList,...){
     SeqLayers <- seq(Number_of_Layers)
     Layers_Name <- names(LayersList)
         
-    if (!all(sapply(SeqLayers, function(x) is.igraph(LayersList[[x]])))){
+    if (!all(sapply(SeqLayers, function(x) is_igraph(LayersList[[x]])))){
         stop("Not igraph objects")
     }
     
@@ -88,17 +88,14 @@ create.multiplex.default <- function(LayersList,...){
 	}
 	stopImplicitCluster()
 	print(paste("Simplfy layers took: ", Sys.time() - simplify_layers_time_start))
-	
-
 
     ## We set the names of the layers. 
-    
     if (is.null(Layers_Name)){
         names(Layer_List) <- paste0("Layer_", SeqLayers)
     } else {
         names(Layer_List) <- Layers_Name
     }
-    
+
     ## We get a pool of nodes (Nodes in any of the layers.)
     Pool_of_Nodes <- 
         sort(unique(unlist(lapply(SeqLayers, 

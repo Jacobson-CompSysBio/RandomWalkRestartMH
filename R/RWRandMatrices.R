@@ -194,6 +194,218 @@ normalize.multiplex.adjacency <- function(x)
 }
 
 ## Roxy Documentation comments
+#' Computes row normalization of a matrix
+#'
+#' \code{row.normalize.matrix} is a function to compute the row
+#' normalization of a sparse matrix of the package \code{Matrix}.
+#'
+#' @usage row.normalize.matrix(x)
+#'
+#' @param x A \code{Matrix} object describing a matrix.
+#'
+#' @return A sparse column normalized matrix created with the
+#' \code{Matrix} package.
+#'
+#' @seealso \code{\link{compute.adjacency.matrix},
+#' \link{Random.Walk.Restart.Multiplex}}
+#'
+#' @author Alberto Valdeolivas Urbelz \email{alvaldeolivas@@gmail.com}
+#'
+#' @examples
+#' m1 <- igraph::graph(c(1,2,1,3,2,3), directed = FALSE)
+#' m2 <- igraph::graph(c(1,3,2,3,3,4,1,4), directed = FALSE)
+#' multiObject <- create.multiplex(list(m1=m1,m2=m2))
+#' AdjMatrix <- compute.adjacency.matrix(multiObject)
+#' row.normalize.matrix(AdjMatrix)
+#'
+#'@import Matrix
+#'@export
+
+row.normalize.matrix <- function(x) {
+  if (!is(x, "dgCMatrix")){
+    stop("Not a dgCMatrix object of Matrix package")
+  }
+
+  row_sums <- Matrix::rowSums(x, na.rm = FALSE, dims = 1, sparseResult = FALSE)
+  row_sums_masked <- row_sums[ row_sums != 0 ]
+  mask_names <- names(row_sums_masked)
+  x[mask_names, ] <- x[mask_names, ] / row_sums_masked
+  return(x)
+}
+
+#'@export
+compute.transition.matrix.homogeneous <- function(x, delta = 0.5, transpose = TRUE) {
+  if (!isMultiplex(x)) {
+    stop("Not a Multiplex object")
+  }
+  if (delta > 1 || delta <= 0) {
+    stop("Delta should be between 0 and 1")
+  }
+
+  N <- x$Number_of_Nodes_Multiplex
+  L <- x$Number_of_Layers
+
+  Layers_Names <- names(x)[seq(L)]
+
+  counter <- 0
+  Layers_List <- lapply(x[Layers_Names], function(x) {
+
+    counter <<- counter + 1
+    if (is_weighted(x)) {
+      Adjacency_Layer <-  as_adjacency_matrix(x, sparse = TRUE, attr = "weight")
+    } else {
+      Adjacency_Layer <-  as_adjacency_matrix(x, sparse = TRUE)
+    }
+
+    Adjacency_Layer <- Adjacency_Layer[order(rownames(Adjacency_Layer)),
+                                       order(colnames(Adjacency_Layer))]
+    colnames(Adjacency_Layer) <- paste0(colnames(Adjacency_Layer), "_", counter)
+    rownames(Adjacency_Layer) <- paste0(rownames(Adjacency_Layer), "_", counter)
+
+    Adjacency_Layer <- row.normalize.matrix(Adjacency_Layer)
+    Adjacency_Layer
+  })
+
+  ## We impose delta=0 in the monoplex case.
+  if (L == 1) {
+    SupraAdjacencyMatrix <- bdiag(unlist(Layers_List))
+
+    if (transpose) {
+      SupraAdjacencyMatrix <- t(SupraAdjacencyMatrix)
+    }
+
+    SupraAdjacencyMatrix <- as(SupraAdjacencyMatrix, "dgCMatrix")
+    return(SupraAdjacencyMatrix)
+  }
+
+  cl <- makeCluster(detectCores())
+
+  ## IDEM_MATRIX.
+  Idem_Matrix <- Matrix::Diagonal(N, x = 1)
+
+  MyColNames <- unlist(lapply(Layers_List, function(x) unlist(colnames(x))))
+  MyRowNames <- unlist(lapply(Layers_List, function(x) unlist(rownames(x))))
+  names(MyColNames) <- c()
+  names(MyRowNames) <- c()
+  SupraAdjacencyMatrix <- (1 - delta) * (bdiag(unlist(Layers_List)))
+  colnames(SupraAdjacencyMatrix) <- MyColNames
+  rownames(SupraAdjacencyMatrix) <- MyRowNames
+
+  offdiag <- (delta / (L - 1)) * Idem_Matrix
+
+  i <- seq_len(L)
+  Position_ini_row <- 1 + (i - 1) * N
+  Position_end_row <- N + (i - 1) * N
+  j <- seq_len(L)
+  Position_ini_col <- 1 + (j - 1) * N
+  Position_end_col <- N + (j - 1) * N
+  
+  combinations <- expand.grid(seq_len(L), seq_len(L))
+  filtered_combinations <- subset(combinations, Var1 != Var2)
+
+  modified_matrices <- foreach(column = seq_len(L), .combine = 'cbind') %dopar% {
+    # get rows that match the 
+    column_mask_for_rows <- filtered_combinations$Var2 == column
+    matching_rows <- filtered_combinations[column_mask_for_rows, ]
+
+    matching_layers <- matching_rows$Var1
+    col_ini =  Position_ini_col[column]
+    col_end =  Position_end_col[column]
+
+    modified_matrix <- SupraAdjacencyMatrix[, col_ini:col_end]
+
+
+    col_vector <- c()
+    row_vector <- c()
+    for (sub_layer in matching_layers){
+        row_ini = Position_ini_row[sub_layer]
+        row_end = Position_end_row[sub_layer]
+        row_vector <- c(row_vector, row_ini:row_end)
+        col_vector <- c(col_vector, col_ini:col_end)
+    }
+
+    col_vector <- col_vector - (col_ini -1) 
+
+    modified_vectors <- cbind(row_vector, col_vector)
+    modified_matrix[modified_vectors] <- unique(offdiag[offdiag>0]) # this is scalar... ought to be 1U
+
+    return(drop0(modified_matrix))
+  }
+
+  SupraAdjacencyMatrix = modified_matrices
+
+  stopCluster(cl)
+
+  # Row normalize to account for nodes with zero edges in a layer
+  SupraAdjacencyMatrix <- row.normalize.matrix(SupraAdjacencyMatrix)
+
+  if (transpose) {
+    SupraAdjacencyMatrix <- t(SupraAdjacencyMatrix)
+  }
+
+  SupraAdjacencyMatrix <- as(SupraAdjacencyMatrix, "dgCMatrix")
+
+  return(SupraAdjacencyMatrix)
+}
+
+#' @export
+compute.transition.matrix.heterogeneous <- function(x,
+                                                    lambda = 0.5,
+                                                    delta1 = 0.5,
+                                                    delta2 = 0.5) {
+  if (!isMultiplexHet(x)) {
+    stop("Not a Multiplex Heterogeneous object")
+  }
+
+  if (delta1 > 1 || delta1 <= 0) {
+    stop("Delta1 should be between 0 and 1")
+  }
+
+  if (delta2 > 1 || delta2 <= 0) {
+    stop("Delta2 should be between 0 and 1")
+  }
+
+  if (lambda > 1 || lambda <= 0) {
+    stop("Lambda should be between 0 and 1")
+  }
+
+  # Compute transition matrix for homogeneous networks
+  Transition_Multiplex_Network1 <-
+    compute.transition.matrix.homogeneous(x$Multiplex1, delta1, FALSE)
+  Transition_Multiplex_Network2 <-
+    compute.transition.matrix.homogeneous(x$Multiplex2, delta2, FALSE)
+
+  # Normalize Supra Bipartite Matrix
+  Transition_Multiplex1_Multiplex2 <-
+    row.normalize.matrix(x$BipartiteNetwork)
+  Transition_Multiplex2_Multiplex1 <-
+    row.normalize.matrix(t(x$BipartiteNetwork))
+
+  # Scale each matrix
+  Transition_Multiplex_Network1 <- (1 - lambda) * Transition_Multiplex_Network1
+  Transition_Multiplex_Network2 <- (1 - lambda) * Transition_Multiplex_Network2
+  Transition_Multiplex1_Multiplex2 <- lambda * Transition_Multiplex1_Multiplex2
+  Transition_Multiplex2_Multiplex1 <- lambda * Transition_Multiplex2_Multiplex1
+
+  Transition_Multiplex_Heterogeneous_Matrix_1 <-
+    cbind(Transition_Multiplex_Network1, Transition_Multiplex1_Multiplex2)
+  Transition_Multiplex_Heterogeneous_Matrix_2 <-
+    cbind(Transition_Multiplex2_Multiplex1, Transition_Multiplex_Network2)
+  Transition_Multiplex_Heterogeneous_Matrix <-
+    rbind(Transition_Multiplex_Heterogeneous_Matrix_1,
+          Transition_Multiplex_Heterogeneous_Matrix_2)
+
+  Transition_Multiplex_Heterogeneous_Matrix <-
+    row.normalize.matrix(Transition_Multiplex_Heterogeneous_Matrix)
+  Transition_Multiplex_Heterogeneous_Matrix <-
+    t(Transition_Multiplex_Heterogeneous_Matrix)
+  
+  Transition_Multiplex_Heterogeneous_Matrix <- as(Transition_Multiplex_Heterogeneous_Matrix, "dgCMatrix")
+
+  return(Transition_Multiplex_Heterogeneous_Matrix)
+}
+
+## Roxy Documentation comments
 #' Performs Random Walk with Restart on a Multiplex Network
 #'
 #' \code{Random.Walk.Restart.Multiplex} is a function to perform a Random Walk
@@ -513,10 +725,12 @@ compute.transition.matrix <- function(x,lambda = 0.5, delta1=0.5,delta2=0.5)
     
     message("Computing adjacency matrix of the first Multiplex network...")
     AdjMatrix_Multiplex1 <- compute.adjacency.matrix(x$Multiplex1,delta1)
+    AdjMatrix_Multiplex1 <- normalize.multiplex.adjacency(AdjMatrix_Multiplex1)
     
     message("Computing adjacency matrix of the second Multiplex network...")
     ## We have to sort the adjacency matrix
     AdjMatrix_Multiplex2 <- compute.adjacency.matrix(x$Multiplex2,delta2)
+    AdjMatrix_Multiplex2 <- normalize.multiplex.adjacency(AdjMatrix_Multiplex2)
     
     ## Transition Matrix for the inter-subnetworks links
     message("Computing inter-subnetworks transitions...")
@@ -775,7 +989,7 @@ Random.Walk.Restart.MultiplexHet.default <- function(x, MultiplexHet_Object,
     ## We compute the scores for the different seeds.
     Seeds_Score <- get.seed.scores.multHet(Multiplex1_Seeds, Multiplex2_Seeds,eta,
         NumberLayers1,NumberLayers2,tau1,tau2)
-        
+
     ## We define the prox_vector(The vector we will move after the first
     ## RWR iteration. We start from The seed. We have to take in account
     ## that the walker with restart in some of the Seed genes,
