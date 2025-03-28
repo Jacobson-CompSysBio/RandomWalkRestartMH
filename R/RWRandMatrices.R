@@ -222,10 +222,6 @@ normalize.multiplex.adjacency <- function(x)
 #'@export
 
 row.normalize.matrix <- function(x) {
-  if (!is(x, "dgCMatrix")){
-    stop("Not a dgCMatrix object of Matrix package")
-  }
-
   row_sums <- Matrix::rowSums(x, na.rm = FALSE, dims = 1, sparseResult = FALSE)
   row_sums_masked <- row_sums[ row_sums != 0 ]
   mask_names <- names(row_sums_masked)
