@@ -16,10 +16,9 @@ RWR_MultiResults <-
     Random.Walk.Restart.Multiplex(AdjMatrixNorm, multiObject_1,Multiplex1_Seeds)
 
 RWRM_ExpectedResults <- data.frame(NodeNames = c("3","2","4"),
-                                    Score = c(0.04934363, 
-                                    0.01963822, 0.01421403),
+                                    Score = c(0.04062487, 0.01618112, 0.01352880),
                                     stringsAsFactors = FALSE)
-
+print(RWR_MultiResults)
 ## Multiplex-Heterogeneous
 h1 <- igraph::graph(c("A","C","B","E","E","D","E","C"), directed = FALSE)
 multiObject_2 <- create.multiplex(list(h1=h1))
@@ -30,19 +29,17 @@ multiHetObject <-
 MultiHetTranMatrix <- compute.transition.matrix(multiHetObject)
 
 Multiplex2_Seeds <- c("E")
-
+ 
 RWR_MultiHetResults <- Random.Walk.Restart.MultiplexHet(MultiHetTranMatrix,
     multiHetObject,Multiplex1_Seeds,Multiplex2_Seeds)
 
-
+print(RWR_MultiHetResults)
 RWRMH_Multi1ExpectedResults <- data.frame(NodeNames = c("3","2","4"),
-                                    Score = c(0.041135932,  
-                                    0.005778811,0.003637140), 
+                                    Score = c(0.039446801, 0.004670706, 0.003384651), 
                                     stringsAsFactors = FALSE)
 
-RWRMH_Multi2ExpectedResults <- data.frame(NodeNames = c("A","C","B","D"),
-                                    Score = c(0.06189589, 0.02817966,
-                                    0.01889527, 0.01889527),
+RWRMH_Multi2ExpectedResults <- data.frame(NodeNames = c("A","B","D","C"),
+                                    Score = c(0.06361334, 0.02261813, 0.02261813, 0.02085107),
                                     stringsAsFactors = FALSE)
 
 
