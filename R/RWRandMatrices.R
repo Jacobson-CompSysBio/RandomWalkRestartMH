@@ -46,49 +46,53 @@
 #'@import iterators
 #'@importFrom methods as
 #'@export
-compute.adjacency.matrix <- function(x,delta = 0.5)
-{
-    if (!isMultiplex(x) & !isMultiplexHet(x)) {
+compute.adjacency.matrix <- function(x, delta = 0.5) {
+    if (!isMultiplex(x) && !isMultiplexHet(x)) {
         stop("Not a Multiplex or Multiplex Heterogeneous object")
     }
     if (delta > 1 || delta <= 0) {
         stop("Delta should be between 0 and 1")
     }
-    cl <- makeCluster(detectCores())
 
     N <- x$Number_of_Nodes_Multiplex
     L <- x$Number_of_Layers
-    
-    ## We impose delta=0 in the monoplex case.
-    if (L==1){
-        delta = 0
-    }
-    
+
     Layers_Names <- names(x)[seq(L)]
-    ## IDEM_MATRIX.
-    Idem_Matrix <- Matrix::Diagonal(N, x = 1)
- 
-    counter <- 0 
+
+    counter <- 0
     Layers_List <- lapply(x[Layers_Names],function(x){
-        
-        counter <<- counter + 1;    
-        if (is_weighted(x)){ 
+
+        counter <<- counter + 1
+        if (is_weighted(x)) {
             Adjacency_Layer <-  as_adjacency_matrix(x,sparse = TRUE, 
-                attr = "weight")
+            attr = "weight")
         } else {
             Adjacency_Layer <-  as_adjacency_matrix(x,sparse = TRUE)
         }
-        
-        Adjacency_Layer <- Adjacency_Layer[order(rownames(Adjacency_Layer)),
-            order(colnames(Adjacency_Layer))]
-        colnames(Adjacency_Layer) <- 
-            paste0(colnames(Adjacency_Layer),"_",counter)
-        rownames(Adjacency_Layer) <- 
-            paste0(rownames(Adjacency_Layer),"_",counter)
 
+        Adjacency_Layer <- Adjacency_Layer[order(rownames(Adjacency_Layer)),
+                                        order(colnames(Adjacency_Layer))]
+        colnames(Adjacency_Layer) <-
+            paste0(colnames(Adjacency_Layer), "_", counter)
+        rownames(Adjacency_Layer) <-
+            paste0(rownames(Adjacency_Layer), "_", counter)
+
+        Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer)
         Adjacency_Layer
     })
+
+    ## We impose delta=0 in the monoplex case.
+    if (L==1){
+      SupraAdjacencyMatrix <- bdiag(unlist(Layers_List))
+      SupraAdjacencyMatrix <- as(SupraAdjacencyMatrix, "dgCMatrix")
+      return(SupraAdjacencyMatrix)
+    }
     
+    cl <- makeCluster(detectCores())
+
+    ## IDEM_MATRIX.
+    Idem_Matrix <- Matrix::Diagonal(N, x = 1)
+
     MyColNames <- unlist(lapply(Layers_List, function (x) unlist(colnames(x))))
     MyRowNames <- unlist(lapply(Layers_List, function (x) unlist(rownames(x))))
     names(MyColNames) <- c()
@@ -96,9 +100,8 @@ compute.adjacency.matrix <- function(x,delta = 0.5)
     SupraAdjacencyMatrix <- (1-delta)*(bdiag(unlist(Layers_List)))
     colnames(SupraAdjacencyMatrix) <-MyColNames
     rownames(SupraAdjacencyMatrix) <-MyRowNames
-    
+
     offdiag <- (delta/(L-1))*Idem_Matrix
-    
 
     i <- seq_len(L)
     Position_ini_row <- 1 + (i-1)*N
