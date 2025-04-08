@@ -23,7 +23,7 @@
 simplify.layers <- function(Input_Layer){
     
     ## Undirected Graphs
-    Layer <- as_undirected(Input_Layer, mode = c("collapse"),
+    Layer <- as.undirected(Input_Layer, mode = c("collapse"),
         edge.attr.comb = igraph_opt("edge.attr.comb"))
     
     ## Unweighted or Weigthed Graphs
