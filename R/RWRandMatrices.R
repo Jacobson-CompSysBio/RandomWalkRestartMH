@@ -222,6 +222,10 @@ normalize.multiplex.adjacency <- function(x)
 #'@export
 
 row.normalize.matrix <- function(x) {
+  if (!is(x, "dgCMatrix")){
+    stop("Not a dgCMatrix object of Matrix package")
+  }
+
   row_sums <- Matrix::rowSums(x, na.rm = FALSE, dims = 1, sparseResult = FALSE)
   row_sums_masked <- row_sums[ row_sums != 0 ]
   mask_names <- names(row_sums_masked)
@@ -303,7 +307,8 @@ compute.transition.matrix.homogeneous <- function(x,
     colnames(Adjacency_Layer) <- paste0(colnames(Adjacency_Layer), "_", counter)
     rownames(Adjacency_Layer) <- paste0(rownames(Adjacency_Layer), "_", counter)
 
-    Adjacency_Layer <- row.normalize.matrix(Adjacency_Layer)
+    # Adjacency_Layer <- row.normalize.matrix(Adjacency_Layer)
+    Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer)
     Adjacency_Layer
   })
 
@@ -311,9 +316,9 @@ compute.transition.matrix.homogeneous <- function(x,
   if (L == 1) {
     TransMatrix <- bdiag(unlist(Layers_List))
 
-    if (transpose) {
-      TransMatrix <- t(TransMatrix)
-    }
+    # if (transpose) {
+    #   TransMatrix <- t(TransMatrix)
+    # }
 
     TransMatrix <- as(TransMatrix, "dgCMatrix")
     return(TransMatrix)
@@ -377,11 +382,12 @@ compute.transition.matrix.homogeneous <- function(x,
   stopCluster(cl)
 
   # Row normalize to account for nodes with zero edges in a layer
-  TransMatrix <- row.normalize.matrix(TransMatrix)
+  # TransMatrix <- row.normalize.matrix(TransMatrix)
+  TransMatrix <- normalize.multiplex.adjacency(TransMatrix)
 
-  if (transpose) {
-    TransMatrix <- t(TransMatrix)
-  }
+  # if (transpose) {
+  #   TransMatrix <- t(TransMatrix)
+  # }
 
   TransMatrix <- as(TransMatrix, "dgCMatrix")
 
@@ -982,16 +988,16 @@ Random.Walk.Restart.MultiplexHet <- function(...){
 #'@rdname Random.Walk.Restart.MultiplexHet
 #'@export
 Random.Walk.Restart.MultiplexHet.default <- function(x, MultiplexHet_Object, 
-    Multiplex1_Seeds,Multiplex2_Seeds, r=0.7,tau1,tau2,eta=0.5,
+    Multiplex1_Seeds, Multiplex2_Seeds, r=0.7,tau1,tau2,eta=0.5,
     MeanType="Geometric", DispResults="TopScores",...){
         
     ## We control the different values.
     if (!"dgCMatrix" %in% class(x)){
-        stop("Not a dgCMatrix object of Matrix package")
+      stop("Not a dgCMatrix object of Matrix package")
     }
     
     if (!isMultiplexHet(MultiplexHet_Object)) {
-        stop("Not a Multiplex Heterogeneous object")
+      stop("Not a Multiplex Heterogeneous object")
     }
         
     NumberLayers1 <- MultiplexHet_Object$Multiplex1$Number_of_Layers
@@ -1006,69 +1012,60 @@ Random.Walk.Restart.MultiplexHet.default <- function(x, MultiplexHet_Object,
     MultiplexSeeds2 <- as.character(Multiplex2_Seeds)
         
     if (length(MultiplexSeeds1) < 1 & length(MultiplexSeeds2) < 1){
-        stop("You did not provided any seeds")
-    } else {
-        if (length(MultiplexSeeds1) >= NumberNodes1 | length(MultiplexSeeds2) >= 
-            NumberNodes2){
-            stop("The length of some of the vectors containing the seed nodes 
+      stop("You did not provided any seeds")
+    } 
+    if (length(MultiplexSeeds1) >= NumberNodes1 ||
+        length(MultiplexSeeds2) >= NumberNodes2) {
+      stop("The length of some of the vectors containing the seed nodes 
             is not correct")
-        }  else {
-            if (!all(MultiplexSeeds1 %in% All_nodes_Multiplex1)){
-                stop("Some of the  input seeds are not nodes of the first 
-               input network")
-            } else {
-                if (!all(All_nodes_Multiplex2 %in% All_nodes_Multiplex2)){
-                    stop("Some of the inputs seeds are not nodes of the second
-                        input network")
-                }
-            }
-        }
     }
-        
+    if (!all(MultiplexSeeds1 %in% All_nodes_Multiplex1)){
+      stop("Some of the input seeds are not nodes of the first input network")
+    } 
+    if (!all(All_nodes_Multiplex2 %in% All_nodes_Multiplex2)){
+      stop("Some of the inputs seeds are not nodes of the second input network")
+    } 
     if (r >= 1 || r <= 0) {
-        stop("Restart partameter should be between 0 and 1")
+      stop("Restart partameter should be between 0 and 1")
     }
-        
     if (eta >= 1 || eta <= 0) {
-        stop("Eta partameter should be between 0 and 1")
-    }
-        
-    if(missing(tau1)){
-        tau1 <- rep(1,NumberLayers1)/NumberLayers1
+      stop("Eta partameter should be between 0 and 1")
+    }   
+    if (missing(tau1)){
+      tau1 <- rep(1,NumberLayers1)/NumberLayers1
     } else {
-        tau1 <- as.numeric(tau1)
-        if (sum(tau1)/NumberLayers1 != 1) {
-            stop("The sum of the components of tau divided by the number of 
-                layers should be 1")}
+      tau1 <- as.numeric(tau1)
+      if (sum(tau1)/NumberLayers1 != 1) {
+        stop("The sum of the components of tau1 divided by the number of layers should be 1")
+      }
     }
-        
-    if(missing(tau2)){
-        tau2 <- rep(1,NumberLayers2)/NumberLayers2
+
+    if (missing(tau2)){
+      tau2 <- rep(1,NumberLayers2)/NumberLayers2
     } else {
-        tau2 <- as.numeric(tau2)
-        if (sum(tau2)/NumberLayers2 != 1) {
-            stop("The sum of the components of tau divided by the number of 
-            layers should be 1")}
+      tau2 <- as.numeric(tau2)
+      if (sum(tau2)/NumberLayers2 != 1) {
+        stop("The sum of the components of tau2 divided by the number of layers should be 1")
+      }
     }
-        
-    if(!(MeanType %in% c("Geometric","Arithmetic","Sum"))){
-        stop("The type mean should be Geometric, Arithmetic or Sum")
+
+    if (!(MeanType %in% c("Geometric","Arithmetic","Sum"))) {
+      stop("The type mean should be Geometric, Arithmetic or Sum")
     }
-        
-    if(!(DispResults %in% c("TopScores","Alphabetic"))){
-        stop("The way to display RWRM results should be TopScores or
-       Alphabetic")
+
+    if (!(DispResults %in% c("TopScores","Alphabetic"))) {
+      stop("The way to display RWRM results should be TopScores or Alphabetic")
     }
-        
+
     ## We define the threshold and the number maximum of iterations
     ## for the random walker.
     Threeshold <- 1e-10
     NetworkSize <- ncol(x)
-        
+
     ## We initialize the variables to control the flux in the RW algo.
     residue <- 1
     iter <- 1
-        
+
     ## We compute the scores for the different seeds.
     Seeds_Score <- get.seed.scores.multHet(Multiplex1_Seeds, Multiplex2_Seeds,eta,
         NumberLayers1,NumberLayers2,tau1,tau2)
@@ -1078,75 +1075,71 @@ Random.Walk.Restart.MultiplexHet.default <- function(x, MultiplexHet_Object,
     ## that the walker with restart in some of the Seed genes,
     ## depending on the score we gave in that file).
     prox_vector <- matrix(0,nrow = NetworkSize,ncol=1)
-    
+
     prox_vector[which(colnames(x) %in% Seeds_Score[,1])] <- (Seeds_Score[,2])
-        
+
     prox_vector  <- prox_vector/sum(prox_vector)
     restart_vector <-  prox_vector
-        
-    while(residue >= Threeshold){
-            
-        old_prox_vector <- prox_vector
-        prox_vector <- (1-r)*(x %*% prox_vector) + r*restart_vector
-        residue <- sqrt(sum((prox_vector-old_prox_vector)^2))
-        iter <- iter + 1;
+
+    while (residue >= Threeshold) {
+      old_prox_vector <- prox_vector
+      prox_vector <- (1-r)*(x %*% prox_vector) + r*restart_vector
+      residue <- sqrt(sum((prox_vector-old_prox_vector)^2))
+      iter <- iter + 1;
     }
-        
+
     IndexSep <- NumberNodes1*NumberLayers1
     prox_vector_1 <- prox_vector[1:IndexSep,]
     prox_vector_2 <- prox_vector[(IndexSep+1):nrow(prox_vector),]
-        
+
     NodeNames1 <- gsub("_1$", "",names(prox_vector_1)[seq_len(NumberNodes1)])
     NodeNames2 <- gsub("_1$", "",names(prox_vector_2)[seq_len(NumberNodes2)])
-        
-    if (MeanType=="Geometric"){
-        rank_global1 <- geometric.mean(prox_vector_1,NumberLayers1,NumberNodes1)    
-        rank_global2 <- geometric.mean(prox_vector_2,NumberLayers2,NumberNodes2)   
+
+    if (MeanType=="Geometric") {
+      rank_global1 <- geometric.mean(prox_vector_1,NumberLayers1,NumberNodes1)    
+      rank_global2 <- geometric.mean(prox_vector_2,NumberLayers2,NumberNodes2)   
+    } else if (MeanType=="Arithmetic") {
+      rank_global1 <- regular.mean(prox_vector_1,NumberLayers1,NumberNodes1)    
+      rank_global2 <- regular.mean(prox_vector_2,NumberLayers2,NumberNodes2)     
     } else {
-        if (MeanType=="Arithmetic") {
-            rank_global1 <- regular.mean(prox_vector_1,NumberLayers1,NumberNodes1)    
-            rank_global2 <- regular.mean(prox_vector_2,NumberLayers2,NumberNodes2)     
-        } else {
-            rank_global1 <- sumValues(prox_vector_1,NumberLayers1,NumberNodes1)    
-            rank_global2 <- sumValues(prox_vector_2,NumberLayers2,NumberNodes2) 
-        }
+      rank_global1 <- sumValues(prox_vector_1,NumberLayers1,NumberNodes1)    
+      rank_global2 <- sumValues(prox_vector_2,NumberLayers2,NumberNodes2) 
     }
-        
+
     Global_results <- data.frame(NodeNames = c(NodeNames1,NodeNames2), 
         Score = c(rank_global1,rank_global2))
-    
+
     Multiplex1_results <-data.frame(NodeNames = NodeNames1,Score = rank_global1)
     Multiplex2_results <-data.frame(NodeNames = NodeNames2,Score = rank_global2)
     Seeds <- c(Multiplex1_Seeds, Multiplex2_Seeds)
-    
-    if (DispResults=="TopScores"){
-        ## We sort the nodes according to their score.
-        Global_results <- 
-            Global_results[with(Global_results, order(-Score, NodeNames)), ]
-        Multiplex1_results <-
-            Multiplex1_results[with(Multiplex1_results, order(-Score, NodeNames)),] 
-        Multiplex2_results <-
-            Multiplex2_results[with(Multiplex2_results, order(-Score, NodeNames)),] 
-        
-        ### We remove the seed from the individual networks 
-        Multiplex1_results <- 
-            Multiplex1_results[which(!Multiplex1_results$NodeNames %in% Seeds),]
-        Multiplex2_results <- 
-            Multiplex2_results[which(!Multiplex2_results$NodeNames %in% Seeds),]
-        
-        } else {
-            Global_results <- Global_results
-            Multiplex1_results <- Multiplex1_results
-            Multiplex2_results <- Multiplex2_results
-        }
-        
+
+    if (DispResults=="TopScores") {
+      ## We sort the nodes according to their score.
+      Global_results <- 
+          Global_results[with(Global_results, order(-Score, NodeNames)), ]
+      Multiplex1_results <-
+          Multiplex1_results[with(Multiplex1_results, order(-Score, NodeNames)),] 
+      Multiplex2_results <-
+          Multiplex2_results[with(Multiplex2_results, order(-Score, NodeNames)),] 
+
+      ### We remove the seed from the individual networks 
+      Multiplex1_results <- 
+          Multiplex1_results[which(!Multiplex1_results$NodeNames %in% Seeds),]
+      Multiplex2_results <- 
+          Multiplex2_results[which(!Multiplex2_results$NodeNames %in% Seeds),]      
+    } else {
+      Global_results <- Global_results
+      Multiplex1_results <- Multiplex1_results
+      Multiplex2_results <- Multiplex2_results
+    }
+
     rownames(Global_results) <- c()
-        
+
     RWRMH_ranking <- list(RWRMH_GlobalResults = Global_results, 
         RWRMH_Multiplex1 = Multiplex1_results, 
         RWRMH_Multiplex2 = Multiplex2_results,
         Seed_Nodes = Seeds)
-        
+
     class(RWRMH_ranking) <- "RWRMH_Results"
     return(RWRMH_ranking)
 }
