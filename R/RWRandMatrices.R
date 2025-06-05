@@ -77,7 +77,7 @@ compute.adjacency.matrix <- function(x, delta = 0.5) {
         rownames(Adjacency_Layer) <-
             paste0(rownames(Adjacency_Layer), "_", counter)
 
-        Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer)
+        #Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer)
         Adjacency_Layer
     })
 
