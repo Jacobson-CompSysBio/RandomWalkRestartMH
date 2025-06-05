@@ -309,6 +309,8 @@ compute.transition.matrix.homogeneous <- function(x,
 
     # Adjacency_Layer <- row.normalize.matrix(Adjacency_Layer)
     Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer)
+
+    print(paste0("Normalized layer", counter))
     Adjacency_Layer
   })
 
