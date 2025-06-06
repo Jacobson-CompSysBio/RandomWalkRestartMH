@@ -325,69 +325,102 @@ compute.transition.matrix.homogeneous <- function(x,
     return(TransMatrix)
   }
 
-  build_block_matrix <- function(diag_matrices, off_diag_matrix) {
+  build_block_matrix_dgCMatrix <- function(diag_matrices, off_diag_matrix) {
     L <- length(diag_matrices)
+    
+    # Check off_diag_matrix is dgCMatrix
+    if (!inherits(off_diag_matrix, "dgCMatrix")) {
+      stop("off_diag_matrix must be a dgCMatrix")
+    }
+    
+    # Check all diag_matrices are dgCMatrix
+    if (!all(sapply(diag_matrices, function(m) inherits(m, "dgCMatrix")))) {
+      stop("All diagonal matrices must be dgCMatrix")
+    }
     
     # Get dimensions of diagonal blocks
     row_dims <- sapply(diag_matrices, nrow)
     col_dims <- sapply(diag_matrices, ncol)
     
-    # Off-diagonal matrix dimensions
     off_rows <- nrow(off_diag_matrix)
     off_cols <- ncol(off_diag_matrix)
     
-    # We'll check that off_diag_matrix dimensions are compatible with diagonal blocks
-    # Assuming off-diag blocks must have same dims for each position:
-    # off_rows must equal row_dims of each diagonal block (or some fixed dims)
-    # off_cols must equal col_dims of each diagonal block
-    
-    # Here let's assume off_diag_matrix dims are equal to diag block dims:
-    # To support this, all diag blocks must have the same dims or you must specify how to adapt.
-    
-    # For simplicity, check off-diagonal dims match first diag block dims
     if (!(off_rows == row_dims[1] && off_cols == col_dims[1])) {
-      stop("off_diag_matrix dimensions must match diagonal block dimensions for this implementation.")
+      stop("off_diag_matrix dimensions must match diagonal block dimensions")
     }
     
-    # Compute cumulative offsets for rows and columns
+    # Compute block offsets
     row_offsets <- c(0, cumsum(row_dims))
     col_offsets <- c(0, cumsum(col_dims))
     
-    # Prepare vectors to hold combined sparse matrix triplets
-    i_all <- integer()
-    j_all <- integer()
-    x_all <- numeric()
+    # Compute total nnz = sum of all diagonal blocks nnz + number of off-diagonal blocks * nnz(off_diag_matrix)
+    nnz_diag <- sum(sapply(diag_matrices, function(m) length(m@x)))
+    nnz_off <- length(off_diag_matrix@x)
+    total_off_blocks <- L * L - L
+    total_nnz <- nnz_diag + total_off_blocks * nnz_off
     
-    # Helper: extract triplets and adjust offsets
-    add_block <- function(mat, row_offset, col_offset) {
-      trip <- summary(mat)
-      trip$i <- trip$i + row_offset
-      trip$j <- trip$j + col_offset
-      list(i = trip$i, j = trip$j, x = trip$x)
+    # Preallocate vectors
+    i_all <- integer(total_nnz)
+    j_all <- integer(total_nnz)
+    x_all <- numeric(total_nnz)
+    
+    pos <- 1  # position in vectors to write next entries
+    
+    # Helper function to copy dgCMatrix triplets into output vectors with offset
+    copy_block <- function(mat, row_off, col_off) {
+      # mat@p gives column pointers, mat@i row indices (0-based), mat@x values
+      nnz_block <- length(mat@x)
+      # Preallocate local vectors
+      i_block <- integer(nnz_block)
+      j_block <- integer(nnz_block)
+      x_block <- numeric(nnz_block)
+      
+      k <- 1
+      ncol_mat <- length(mat@p) - 1
+      for (col in seq_len(ncol_mat)) {
+        start <- mat@p[col] + 1         # +1 for R 1-based indexing
+        end <- mat@p[col + 1]
+        if (end >= start) {
+          idx_range <- start:end
+          n_entries <- length(idx_range)
+          
+          # Row indices: mat@i is 0-based, add 1 for R indexing, then add row offset
+          i_block[k:(k + n_entries - 1)] <- mat@i[idx_range] + 1 + row_off
+          # Column indices: current column index + col offset
+          j_block[k:(k + n_entries - 1)] <- col + col_off
+          # Values
+          x_block[k:(k + n_entries - 1)] <- mat@x[idx_range]
+          
+          k <- k + n_entries
+        }
+      }
+      list(i = i_block, j = j_block, x = x_block)
     }
     
+    # Loop over blocks to fill preallocated vectors
     for (i in seq_len(L)) {
-      print(paste0("Combining row ", i))
+      print(paste0("Combining blocks in layer", i))
       for (j in seq_len(L)) {
         if (i == j) {
           # Diagonal block
-          block_trip <- add_block(diag_matrices[[i]], row_offsets[i], col_offsets[j])
+          block_trip <- copy_block(diag_matrices[[i]], row_offsets[i], col_offsets[j])
         } else {
-          # Off diagonal block (same for all off-diag blocks)
-          block_trip <- add_block(off_diag_matrix, row_offsets[i], col_offsets[j])
+          # Off diagonal block
+          block_trip <- copy_block(off_diag_matrix, row_offsets[i], col_offsets[j])
         }
         
-        # Append triplets
-        i_all <- c(i_all, block_trip$i)
-        j_all <- c(j_all, block_trip$j)
-        x_all <- c(x_all, block_trip$x)
+        nnz_block <- length(block_trip$x)
+        idx_range <- pos:(pos + nnz_block - 1)
+        i_all[idx_range] <- block_trip$i
+        j_all[idx_range] <- block_trip$j
+        x_all[idx_range] <- block_trip$x
+        pos <- pos + nnz_block
       }
     }
     
     total_rows <- sum(row_dims)
     total_cols <- sum(col_dims)
     
-    # Create the final big sparse matrix
     sparseMatrix(i = i_all, j = j_all, x = x_all, dims = c(total_rows, total_cols))
   }
 
