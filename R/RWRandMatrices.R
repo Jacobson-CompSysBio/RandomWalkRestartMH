@@ -353,14 +353,14 @@ compute.transition.matrix.homogeneous <- function(x,
     cat("Block dimensions:\n")
     print(sapply(column_blocks, dim))
 
-    column_matrix <- do.call(rbind2, column_blocks)
+    column_matrix <- Reduce(rbind2, column_blocks)
     all_columns[[j]] <- column_matrix
 
     print(paste0("Column_matrix dim: ", dim(column_matrix)))
   }
   print(paste0("all_columns length: ", length(all_columns)))
   print(paste0("Combining all columns"))
-  TransMatrix <- do.call(cbind2, all_columns)
+  TransMatrix <- Reduce(cbind2, all_columns)
   # Row normalize to account for nodes with zero edges in a layer
   TransMatrix <- normalize.multiplex.adjacency(TransMatrix)
 
