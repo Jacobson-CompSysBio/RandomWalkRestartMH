@@ -326,65 +326,27 @@ compute.transition.matrix.homogeneous <- function(x,
     return(TransMatrix)
   }
 
-  cl <- makeCluster(detectCores())
+  MyColNames <- unlist(lapply(Layers_List, function(x) unlist(colnames(x))))
+  MyRowNames <- unlist(lapply(Layers_List, function(x) unlist(rownames(x))))
 
   ## IDEM_MATRIX.
   Idem_Matrix <- Matrix::Diagonal(N, x = 1)
+  offdiag <- (delta / (L - 1)) * Idem_Matrix
+  offdiag <- as(offdiag, "dgCMatrix")
 
-  MyColNames <- unlist(lapply(Layers_List, function(x) unlist(colnames(x))))
-  MyRowNames <- unlist(lapply(Layers_List, function(x) unlist(rownames(x))))
-  names(MyColNames) <- c()
-  names(MyRowNames) <- c()
-  TransMatrix <- (1 - delta) * (bdiag(unlist(Layers_List)))
+  # For each column of blocks (faster in dgCMatrix)
+  for (j in 1:n_blocks) {
+    column_blocks <- lapply(1:n_blocks, function(i) {
+      if (i == j) diag_blocks[[i]] else off_diag_const_block
+    })
+    column_matrix <- do.call(rbind2, column_blocks)
+    all_columns[[j]] <- column_matrix
+  }
+  TransMatrix <- do.call(cbind2, all_columns)
   colnames(TransMatrix) <- MyColNames
   rownames(TransMatrix) <- MyRowNames
 
-  offdiag <- (delta / (L - 1)) * Idem_Matrix
-
-  i <- seq_len(L)
-  Position_ini_row <- 1 + (i - 1) * N
-  Position_end_row <- N + (i - 1) * N
-  j <- seq_len(L)
-  Position_ini_col <- 1 + (j - 1) * N
-  Position_end_col <- N + (j - 1) * N
-
-  combinations <- expand.grid(seq_len(L), seq_len(L))
-  filtered_combinations <- subset(combinations, Var1 != Var2)
-
-  modified_matrices <- foreach(column = seq_len(L), .combine = 'cbind') %dopar% {
-    # get rows that match the 
-    column_mask_for_rows <- filtered_combinations$Var2 == column
-    matching_rows <- filtered_combinations[column_mask_for_rows, ]
-
-    matching_layers <- matching_rows$Var1
-    col_ini =  Position_ini_col[column]
-    col_end =  Position_end_col[column]
-
-    modified_matrix <- TransMatrix[, col_ini:col_end]
-
-    col_vector <- c()
-    row_vector <- c()
-    for (sub_layer in matching_layers){
-        row_ini = Position_ini_row[sub_layer]
-        row_end = Position_end_row[sub_layer]
-        row_vector <- c(row_vector, row_ini:row_end)
-        col_vector <- c(col_vector, col_ini:col_end)
-    }
-
-    col_vector <- col_vector - (col_ini -1) 
-
-    modified_vectors <- cbind(row_vector, col_vector)
-    modified_matrix[modified_vectors] <- unique(offdiag[offdiag>0]) # this is scalar... ought to be 1U
-
-    return(drop0(modified_matrix))
-  }
-
-  TransMatrix = modified_matrices
-
-  stopCluster(cl)
-
   # Row normalize to account for nodes with zero edges in a layer
-  # TransMatrix <- row.normalize.matrix(TransMatrix)
   TransMatrix <- normalize.multiplex.adjacency(TransMatrix)
 
   # if (transpose) {
