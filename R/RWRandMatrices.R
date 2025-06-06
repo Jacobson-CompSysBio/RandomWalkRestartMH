@@ -186,6 +186,9 @@ normalize.multiplex.adjacency <- function(x)
   }
   
   column_sums <- Matrix::colSums(x, na.rm = FALSE, dims = 1, sparseResult = FALSE)
+
+  col_names <- colnames(x)
+  row_names <- rownames(x)
   
   # Find columns with non-zero sums
   mask <- column_sums != 0
@@ -200,6 +203,9 @@ normalize.multiplex.adjacency <- function(x)
   # Multiply x by D_inv on the right to normalize columns
   x_norm <- x %*% D_inv
   
+  colnames(x_norm) <- col_names
+  rownames(x_norm) <- row_names
+
   x_norm
 }
 
@@ -318,7 +324,7 @@ compute.transition.matrix.homogeneous <- function(x,
     rownames(Adjacency_Layer) <- paste0(rownames(Adjacency_Layer), "_", counter)
 
     # Adjacency_Layer <- row.normalize.matrix(Adjacency_Layer)
-    Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer)
+    Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer) * (1-delta)
 
     Adjacency_Layer
   })
@@ -362,7 +368,7 @@ compute.transition.matrix.homogeneous <- function(x,
     # Compute block offsets
     row_offsets <- c(0, cumsum(row_dims))
     col_offsets <- c(0, cumsum(col_dims))
-    
+        
     # Compute total nnz = sum of all diagonal blocks nnz + number of off-diagonal blocks * nnz(off_diag_matrix)
     nnz_diag <- sum(sapply(diag_matrices, function(m) length(m@x)))
     nnz_off <- length(off_diag_matrix@x)
@@ -411,6 +417,8 @@ compute.transition.matrix.homogeneous <- function(x,
     for (i in seq_len(L)) {
       print(paste0("Combining blocks in layer", i))
       for (j in seq_len(L)) {
+
+
         if (i == j) {
           # Diagonal block
           block_trip <- copy_block(diag_matrices[[i]], row_offsets[i], col_offsets[j])
@@ -434,8 +442,8 @@ compute.transition.matrix.homogeneous <- function(x,
     sparseMatrix(i = i_all, j = j_all, x = x_all, dims = c(total_rows, total_cols))
   }
 
-  MyColNames <- unlist(lapply(Layers_List, function(x) unlist(colnames(x))))
-  MyRowNames <- unlist(lapply(Layers_List, function(x) unlist(rownames(x))))
+  MyColNames <- unname(unlist(lapply(Layers_List, function(x) unlist(colnames(x)))))
+  MyRowNames <- unname(unlist(lapply(Layers_List, function(x) unlist(rownames(x)))))
 
   ## IDEM_MATRIX.
   offdiag <- Matrix::Diagonal(N, x = (delta / (L - 1)) )
