@@ -181,16 +181,26 @@ compute.adjacency.matrix <- function(x, delta = 0.5) {
 
 normalize.multiplex.adjacency <- function(x)
 {
-    if (!is(x,"dgCMatrix")){
-        stop("Not a dgCMatrix object of Matrix package")
-    }
-    
-    column_sums <- Matrix::colSums(x, na.rm = FALSE, dims = 1, sparseResult = FALSE)
-    column_sums_masked <- column_sums[ column_sums != 0 ]
-    mask_names <- names(column_sums_masked)
-    
-    x[, mask_names] <- t(t(x)[mask_names, ] / column_sums_masked)
-    x
+  if (!is(x,"dgCMatrix")){
+    stop("Not a dgCMatrix object of Matrix package")
+  }
+  
+  column_sums <- Matrix::colSums(x, na.rm = FALSE, dims = 1, sparseResult = FALSE)
+  
+  # Find columns with non-zero sums
+  mask <- column_sums != 0
+  
+  # Create a diagonal matrix with 1 / column_sums for non-zero columns, 1 for zero columns
+  inv_col_sums <- numeric(length(column_sums))
+  inv_col_sums[mask] <- 1 / column_sums[mask]
+  inv_col_sums[!mask] <- 1  # or 0 if you want to zero out those columns
+  
+  D_inv <- Diagonal(x = inv_col_sums)
+  
+  # Multiply x by D_inv on the right to normalize columns
+  x_norm <- x %*% D_inv
+  
+  x_norm
 }
 
 ## Roxy Documentation comments
