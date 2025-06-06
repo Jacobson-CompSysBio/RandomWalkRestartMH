@@ -329,12 +329,17 @@ compute.transition.matrix.homogeneous <- function(x,
     return(TransMatrix)
   }
 
+  print.Multiplex("Layer list dim")
+  print(sapply(Layers_List, dim))
+
   MyColNames <- unlist(lapply(Layers_List, function(x) unlist(colnames(x))))
   MyRowNames <- unlist(lapply(Layers_List, function(x) unlist(rownames(x))))
 
   ## IDEM_MATRIX.
   offdiag <- Matrix::Diagonal(N, x = (delta / (L - 1)) )
   offdiag <- as(offdiag, "dgCMatrix")
+
+  print(paste0("offdiag dim: ", dim(offdiag)))
 
   # For each column of blocks (faster in dgCMatrix)
   all_columns <- vector("list", L)
@@ -353,7 +358,7 @@ compute.transition.matrix.homogeneous <- function(x,
 
     print(paste0("Column block dim: ", nrow(all_columns[[j]]), "x", ncol(all_columns[[j]])))
   }
-  print("all_columns length: ", length(all_columns))
+  print(paste0("all_columns length: ", length(all_columns)))
   print(paste0("Combining all columns"))
   TransMatrix <- do.call(cbind2, all_columns)
   # Row normalize to account for nodes with zero edges in a layer
