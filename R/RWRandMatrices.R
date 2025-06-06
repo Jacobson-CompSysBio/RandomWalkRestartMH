@@ -348,7 +348,7 @@ compute.transition.matrix.homogeneous <- function(x,
     column_matrix <- do.call(rbind2, column_blocks)
     all_columns[[j]] <- column_matrix
 
-    print(past0("Column block dim: ", nrow(all_columns[[j]]), "x", ncol(all_columns[[j]])))
+    print(paste0("Column block dim: ", nrow(all_columns[[j]]), "x", ncol(all_columns[[j]])))
   }
   print(paste0("Combining all columns"))
   TransMatrix <- do.call(cbind2, all_columns)
