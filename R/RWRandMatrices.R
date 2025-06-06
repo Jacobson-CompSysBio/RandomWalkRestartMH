@@ -290,6 +290,9 @@ compute.transition.matrix.homogeneous <- function(x,
   N <- x$Number_of_Nodes_Multiplex
   L <- x$Number_of_Layers
 
+  print(paste0("Multiplex has ", N, " nodes"))
+  print(paste0("Multiplex has ", L, " layers"))
+
   Layers_Names <- names(x)[seq(L)]
 
   counter <- 0
@@ -346,11 +349,17 @@ compute.transition.matrix.homogeneous <- function(x,
     all_columns[[j]] <- column_matrix
   }
   TransMatrix <- do.call(cbind2, all_columns)
+  # Row normalize to account for nodes with zero edges in a layer
+  TransMatrix <- normalize.multiplex.adjacency(TransMatrix)
+
+  paste0("Transition Matrix dim ", nrow(TransMatrix), "x", ncol(TransMatrix))
+
+  paste0("Row/col names:", length(MyRowNames), "x", length(MyColNames))
+
   colnames(TransMatrix) <- MyColNames
   rownames(TransMatrix) <- MyRowNames
 
-  # Row normalize to account for nodes with zero edges in a layer
-  TransMatrix <- normalize.multiplex.adjacency(TransMatrix)
+  
 
   # if (transpose) {
   #   TransMatrix <- t(TransMatrix)
