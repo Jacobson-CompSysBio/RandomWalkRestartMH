@@ -344,6 +344,10 @@ compute.transition.matrix.homogeneous <- function(x,
     column_blocks <- lapply(1:L, function(i) {
       if (i == j) Layers_List[[i]] else offdiag
     })
+    cat(sprintf("Column %d: block count = %d\n", j, length(column_blocks)))
+    cat("Block dimensions:\n")
+    print(sapply(column_blocks, dim))
+
     column_matrix <- do.call(rbind2, column_blocks)
     all_columns[[j]] <- column_matrix
 
