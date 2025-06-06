@@ -329,7 +329,7 @@ compute.transition.matrix.homogeneous <- function(x,
     return(TransMatrix)
   }
 
-  print.Multiplex("Layer list dim")
+  print("Layer list dim")
   print(sapply(Layers_List, dim))
 
   MyColNames <- unlist(lapply(Layers_List, function(x) unlist(colnames(x))))
