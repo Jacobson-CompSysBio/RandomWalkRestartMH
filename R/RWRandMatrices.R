@@ -335,9 +335,11 @@ compute.transition.matrix.homogeneous <- function(x,
   offdiag <- as(offdiag, "dgCMatrix")
 
   # For each column of blocks (faster in dgCMatrix)
-  for (j in 1:n_blocks) {
-    column_blocks <- lapply(1:n_blocks, function(i) {
-      if (i == j) diag_blocks[[i]] else off_diag_const_block
+  for (j in 1:L) {
+    print(paste0("combining column", j))
+    
+    column_blocks <- lapply(1:L, function(i) {
+      if (i == j) Layers_List[[i]] else offdiag
     })
     column_matrix <- do.call(rbind2, column_blocks)
     all_columns[[j]] <- column_matrix
