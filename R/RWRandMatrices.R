@@ -290,9 +290,6 @@ compute.transition.matrix.homogeneous <- function(x,
   N <- x$Number_of_Nodes_Multiplex
   L <- x$Number_of_Layers
 
-  print(paste0("Multiplex has ", N, " nodes"))
-  print(paste0("Multiplex has ", L, " layers"))
-
   Layers_Names <- names(x)[seq(L)]
 
   counter <- 0
@@ -313,7 +310,6 @@ compute.transition.matrix.homogeneous <- function(x,
     # Adjacency_Layer <- row.normalize.matrix(Adjacency_Layer)
     Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer)
 
-    print(paste0("Normalized layer", counter))
     Adjacency_Layer
   })
 
@@ -329,8 +325,71 @@ compute.transition.matrix.homogeneous <- function(x,
     return(TransMatrix)
   }
 
-  print("Layer list dim")
-  print(sapply(Layers_List, dim))
+  build_block_matrix <- function(diag_matrices, off_diag_matrix) {
+    L <- length(diag_matrices)
+    
+    # Get dimensions of diagonal blocks
+    row_dims <- sapply(diag_matrices, nrow)
+    col_dims <- sapply(diag_matrices, ncol)
+    
+    # Off-diagonal matrix dimensions
+    off_rows <- nrow(off_diag_matrix)
+    off_cols <- ncol(off_diag_matrix)
+    
+    # We'll check that off_diag_matrix dimensions are compatible with diagonal blocks
+    # Assuming off-diag blocks must have same dims for each position:
+    # off_rows must equal row_dims of each diagonal block (or some fixed dims)
+    # off_cols must equal col_dims of each diagonal block
+    
+    # Here let's assume off_diag_matrix dims are equal to diag block dims:
+    # To support this, all diag blocks must have the same dims or you must specify how to adapt.
+    
+    # For simplicity, check off-diagonal dims match first diag block dims
+    if (!(off_rows == row_dims[1] && off_cols == col_dims[1])) {
+      stop("off_diag_matrix dimensions must match diagonal block dimensions for this implementation.")
+    }
+    
+    # Compute cumulative offsets for rows and columns
+    row_offsets <- c(0, cumsum(row_dims))
+    col_offsets <- c(0, cumsum(col_dims))
+    
+    # Prepare vectors to hold combined sparse matrix triplets
+    i_all <- integer()
+    j_all <- integer()
+    x_all <- numeric()
+    
+    # Helper: extract triplets and adjust offsets
+    add_block <- function(mat, row_offset, col_offset) {
+      trip <- summary(mat)
+      trip$i <- trip$i + row_offset
+      trip$j <- trip$j + col_offset
+      list(i = trip$i, j = trip$j, x = trip$x)
+    }
+    
+    for (i in seq_len(L)) {
+      print(paste0("Combining row ", i))
+      for (j in seq_len(L)) {
+        if (i == j) {
+          # Diagonal block
+          block_trip <- add_block(diag_matrices[[i]], row_offsets[i], col_offsets[j])
+        } else {
+          # Off diagonal block (same for all off-diag blocks)
+          block_trip <- add_block(off_diag_matrix, row_offsets[i], col_offsets[j])
+        }
+        
+        # Append triplets
+        i_all <- c(i_all, block_trip$i)
+        j_all <- c(j_all, block_trip$j)
+        x_all <- c(x_all, block_trip$x)
+      }
+    }
+    
+    total_rows <- sum(row_dims)
+    total_cols <- sum(col_dims)
+    
+    # Create the final big sparse matrix
+    sparseMatrix(i = i_all, j = j_all, x = x_all, dims = c(total_rows, total_cols))
+  }
 
   MyColNames <- unlist(lapply(Layers_List, function(x) unlist(colnames(x))))
   MyRowNames <- unlist(lapply(Layers_List, function(x) unlist(rownames(x))))
@@ -339,39 +398,13 @@ compute.transition.matrix.homogeneous <- function(x,
   offdiag <- Matrix::Diagonal(N, x = (delta / (L - 1)) )
   offdiag <- as(offdiag, "dgCMatrix")
 
-  print(paste0("offdiag dim: ", dim(offdiag)))
+  TransMatrix <- build_block_matrix(Layers_List, offdiag)
 
-  # For each column of blocks (faster in dgCMatrix)
-  all_columns <- vector("list", L)
-  for (j in 1:L) {
-    print(paste0("combining column", j))
-
-    column_blocks <- lapply(1:L, function(i) {
-      if (i == j) Layers_List[[i]] else offdiag
-    })
-    cat(sprintf("Column %d: block count = %d\n", j, length(column_blocks)))
-    cat("Block dimensions:\n")
-    print(sapply(column_blocks, dim))
-
-    column_matrix <- Reduce(rbind2, column_blocks)
-    all_columns[[j]] <- column_matrix
-
-    print(paste0("Column_matrix dim: ", dim(column_matrix)))
-  }
-  print(paste0("all_columns length: ", length(all_columns)))
-  print(paste0("Combining all columns"))
-  TransMatrix <- Reduce(cbind2, all_columns)
-  # Row normalize to account for nodes with zero edges in a layer
+  # Column normalize to account for nodes with zero edges in a layer
   TransMatrix <- normalize.multiplex.adjacency(TransMatrix)
-
-  paste0("Transition Matrix dim ", nrow(TransMatrix), "x", ncol(TransMatrix))
-
-  paste0("Row/col names:", length(MyRowNames), "x", length(MyColNames))
 
   colnames(TransMatrix) <- MyColNames
   rownames(TransMatrix) <- MyRowNames
-
-  
 
   # if (transpose) {
   #   TransMatrix <- t(TransMatrix)
