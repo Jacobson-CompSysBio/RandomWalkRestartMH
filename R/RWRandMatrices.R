@@ -431,7 +431,7 @@ compute.transition.matrix.homogeneous <- function(x,
   offdiag <- Matrix::Diagonal(N, x = (delta / (L - 1)) )
   offdiag <- as(offdiag, "dgCMatrix")
 
-  TransMatrix <- build_block_matrix(Layers_List, offdiag)
+  TransMatrix <- build_block_matrix_dgCMatrix(Layers_List, offdiag)
 
   # Column normalize to account for nodes with zero edges in a layer
   TransMatrix <- normalize.multiplex.adjacency(TransMatrix)
