@@ -75,7 +75,7 @@ create.multiplex.default <- function(LayersList,...){
             LayersList[[x]]
         }
     })
-    print(paste("Layers list took: ", Sys.time() - start_layer_list_time))
+ #   print(paste("Layers list took: ", Sys.time() - start_layer_list_time))
     
 	## We simplify the layers 
     simplify_layers_time_start <- Sys.time()
@@ -87,7 +87,9 @@ create.multiplex.default <- function(LayersList,...){
  		 simplify.layers(Layer_List[[x]])
 	}
 	stopImplicitCluster()
-	print(paste("Simplfy layers took: ", Sys.time() - simplify_layers_time_start))
+#	print(paste("Simplfy layers took: ", Sys.time() - simplify_layers_time_start))
+	
+
 
     ## We set the names of the layers. 
     if (is.null(Layers_Name)){
@@ -106,7 +108,7 @@ create.multiplex.default <- function(LayersList,...){
 
     Layer_List <-
         lapply(Layer_List, add.missing.nodes,Number_of_Layers,Pool_of_Nodes)
-	print(paste("add missing nodes took: ", Sys.time() - add_missing_nodes_time))
+#	print(paste("add missing nodes took: ", Sys.time() - add_missing_nodes_time))
 
     # We set the attributes of the layer
     counter <- 0 
@@ -120,7 +122,6 @@ create.multiplex.default <- function(LayersList,...){
         Number_of_Layers=Number_of_Layers))
 	
     class(MultiplexObject) <- "Multiplex"
-        print("MULTIPLEX CLASS MADE")
     return(MultiplexObject)
 }
     
