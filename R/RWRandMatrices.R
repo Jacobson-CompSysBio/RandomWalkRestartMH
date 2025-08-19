@@ -181,16 +181,390 @@ compute.adjacency.matrix <- function(x, delta = 0.5) {
 
 normalize.multiplex.adjacency <- function(x)
 {
-    if (!is(x,"dgCMatrix")){
-        stop("Not a dgCMatrix object of Matrix package")
+  if (!is(x,"dgCMatrix")){
+    stop("Not a dgCMatrix object of Matrix package")
+  }
+  
+  column_sums <- Matrix::colSums(x, na.rm = FALSE, dims = 1, sparseResult = FALSE)
+
+  col_names <- colnames(x)
+  row_names <- rownames(x)
+  
+  # Find columns with non-zero sums
+  mask <- column_sums != 0
+  
+  # Create a diagonal matrix with 1 / column_sums for non-zero columns, 1 for zero columns
+  inv_col_sums <- numeric(length(column_sums))
+  inv_col_sums[mask] <- 1 / column_sums[mask]
+  inv_col_sums[!mask] <- 1  # or 0 if you want to zero out those columns
+  
+  D_inv <- Diagonal(x = inv_col_sums)
+  
+  # Multiply x by D_inv on the right to normalize columns
+  x_norm <- x %*% D_inv
+  
+  colnames(x_norm) <- col_names
+  rownames(x_norm) <- row_names
+
+  x_norm
+}
+
+## Roxy Documentation comments
+#' Computes row normalization of a matrix
+#'
+#' \code{row.normalize.matrix} is a function to compute the row
+#' normalization of a sparse matrix of the package \code{Matrix}.
+#'
+#' @usage row.normalize.matrix(x)
+#'
+#' @param x A \code{Matrix} object describing a matrix.
+#'
+#' @return A sparse column normalized matrix created with the
+#' \code{Matrix} package.
+#'
+#' @seealso \code{\link{compute.adjacency.matrix},
+#' \link{Random.Walk.Restart.Multiplex}}
+#'
+#' @author Alberto Valdeolivas Urbelz \email{alvaldeolivas@@gmail.com}
+#'
+#' @examples
+#' m1 <- igraph::graph(c(1,2,1,3,2,3), directed = FALSE)
+#' m2 <- igraph::graph(c(1,3,2,3,3,4,1,4), directed = FALSE)
+#' multiObject <- create.multiplex(list(m1=m1,m2=m2))
+#' AdjMatrix <- compute.adjacency.matrix(multiObject)
+#' row.normalize.matrix(AdjMatrix)
+#'
+#'@import Matrix
+#'@export
+
+row.normalize.matrix <- function(x) {
+  if (!is(x, "dgCMatrix")){
+    stop("Not a dgCMatrix object of Matrix package")
+  }
+
+  row_sums <- Matrix::rowSums(x, na.rm = FALSE, dims = 1, sparseResult = FALSE)
+  row_sums_masked <- row_sums[ row_sums != 0 ]
+  mask_names <- names(row_sums_masked)
+  x[mask_names, ] <- x[mask_names, ] / row_sums_masked
+  return(x)
+}
+
+#' Computes the transition matrix of a multiplex network
+#'
+#' \code{compute.transition.matrix.homogeneous} is a function to compute the
+#' transition matrix of a multiplex network provided as a \code{Multiplex} object.
+#'
+#' @usage compute.transition.matrix.homogeneous(x,delta = 0.5,transpose = TRUE)
+#'
+#' @details The parameter \code{delta} sets the probability to change between
+#' layers at the next step. If delta = 0, the particle will always remain
+#' in the same layer after a non-restart iteration. On the other hand, if
+#' delta = 1, the particle will always change between layers, therefore
+#' not following the specific edges of each layer.
+#'
+#' @param x A \code{Multiplex} object describing a multiplex network generated
+#' by the function \code{create.multiplex}.
+#' @param delta A numeric value between 0 and 1. It sets the probability
+#' of performing inter-layer versus intra-layer transitions. It is set by
+#' default to 0.5. See more details below.
+#' @param tranpose A boolean flag. It is used to return a transposed a matrix
+#' that is transposed such that the columns are normalized.
+#'
+#' @return A square sparse adjacency matrix created with the \code{Matrix}
+#' package.
+#'
+#' @seealso \code{\link{create.multiplex},\link{row.normalize.matrix},
+#' \link{compute.transition.matrix.heterogeneous}}
+#'
+#' @author Alberto Valdeolivas Urbelz \email{alvaldeolivas@@gmail.com}
+#'
+#' @examples
+#' m1 <- igraph::graph(c(1,2,1,3,2,3), directed = FALSE)
+#' m2 <- igraph::graph(c(1,3,2,3,3,4,1,4), directed = FALSE)
+#' multiObject <- create.multiplex(list(m1=m1,m2=m2))
+#' compute.transition.matrix.homogeneous(multiObject)
+#'
+#'@import igraph
+#'@import Matrix
+#'@import parallel
+#'@import doParallel
+#'@import foreach
+#'@import iterators
+#'@importFrom methods as
+#'@export
+
+compute.transition.matrix.homogeneous <- function(x,
+                                                  delta = 0.5,
+                                                  transpose = TRUE) {
+  if (!isMultiplex(x)) {
+    stop("Not a Multiplex object")
+  }
+  if (delta > 1 || delta <= 0) {
+    stop("Delta should be between 0 and 1")
+  }
+
+  N <- x$Number_of_Nodes_Multiplex
+  L <- x$Number_of_Layers
+
+  Layers_Names <- names(x)[seq(L)]
+
+  counter <- 0
+  Layers_List <- lapply(x[Layers_Names], function(x) {
+
+    counter <<- counter + 1
+    if (is_weighted(x)) {
+      Adjacency_Layer <-  as_adjacency_matrix(x, sparse = TRUE, attr = "weight")
+    } else {
+      Adjacency_Layer <-  as_adjacency_matrix(x, sparse = TRUE)
+    }
+
+    Adjacency_Layer <- Adjacency_Layer[order(rownames(Adjacency_Layer)),
+                                       order(colnames(Adjacency_Layer))]
+    colnames(Adjacency_Layer) <- paste0(colnames(Adjacency_Layer), "_", counter)
+    rownames(Adjacency_Layer) <- paste0(rownames(Adjacency_Layer), "_", counter)
+
+    # Adjacency_Layer <- row.normalize.matrix(Adjacency_Layer)
+    Adjacency_Layer <- normalize.multiplex.adjacency(Adjacency_Layer) * (1-delta)
+
+    Adjacency_Layer
+  })
+
+  # If L==1, we skip the intra-layer computation
+  if (L == 1) {
+    TransMatrix <- bdiag(unlist(Layers_List))
+
+    # if (transpose) {
+    #   TransMatrix <- t(TransMatrix)
+    # }
+
+    TransMatrix <- as(TransMatrix, "dgCMatrix")
+    return(TransMatrix)
+  }
+
+  build_block_matrix_dgCMatrix <- function(diag_matrices, off_diag_matrix) {
+    L <- length(diag_matrices)
+    
+    # Check off_diag_matrix is dgCMatrix
+    if (!inherits(off_diag_matrix, "dgCMatrix")) {
+      stop("off_diag_matrix must be a dgCMatrix")
     }
     
-    column_sums <- Matrix::colSums(x, na.rm = FALSE, dims = 1, sparseResult = FALSE)
-    column_sums_masked <- column_sums[ column_sums != 0 ]
-    mask_names <- names(column_sums_masked)
+    # Check all diag_matrices are dgCMatrix
+    if (!all(sapply(diag_matrices, function(m) inherits(m, "dgCMatrix")))) {
+      stop("All diagonal matrices must be dgCMatrix")
+    }
     
-    x[, mask_names] <- t(t(x)[mask_names, ] / column_sums_masked)
-    x
+    # Get dimensions of diagonal blocks
+    row_dims <- sapply(diag_matrices, nrow)
+    col_dims <- sapply(diag_matrices, ncol)
+    
+    off_rows <- nrow(off_diag_matrix)
+    off_cols <- ncol(off_diag_matrix)
+    
+    if (!(off_rows == row_dims[1] && off_cols == col_dims[1])) {
+      stop("off_diag_matrix dimensions must match diagonal block dimensions")
+    }
+    
+    # Compute block offsets
+    row_offsets <- c(0, cumsum(row_dims))
+    col_offsets <- c(0, cumsum(col_dims))
+        
+    # Compute total nnz = sum of all diagonal blocks nnz + number of off-diagonal blocks * nnz(off_diag_matrix)
+    nnz_diag <- sum(sapply(diag_matrices, function(m) length(m@x)))
+    nnz_off <- length(off_diag_matrix@x)
+    total_off_blocks <- L * L - L
+    total_nnz <- nnz_diag + total_off_blocks * nnz_off
+    
+    # Preallocate vectors
+    i_all <- integer(total_nnz)
+    j_all <- integer(total_nnz)
+    x_all <- numeric(total_nnz)
+    
+    pos <- 1  # position in vectors to write next entries
+    
+    # Helper function to copy dgCMatrix triplets into output vectors with offset
+    copy_block <- function(mat, row_off, col_off) {
+      # mat@p gives column pointers, mat@i row indices (0-based), mat@x values
+      nnz_block <- length(mat@x)
+      # Preallocate local vectors
+      i_block <- integer(nnz_block)
+      j_block <- integer(nnz_block)
+      x_block <- numeric(nnz_block)
+      
+      k <- 1
+      ncol_mat <- length(mat@p) - 1
+      for (col in seq_len(ncol_mat)) {
+        start <- mat@p[col] + 1         # +1 for R 1-based indexing
+        end <- mat@p[col + 1]
+        if (end >= start) {
+          idx_range <- start:end
+          n_entries <- length(idx_range)
+          
+          # Row indices: mat@i is 0-based, add 1 for R indexing, then add row offset
+          i_block[k:(k + n_entries - 1)] <- mat@i[idx_range] + 1 + row_off
+          # Column indices: current column index + col offset
+          j_block[k:(k + n_entries - 1)] <- col + col_off
+          # Values
+          x_block[k:(k + n_entries - 1)] <- mat@x[idx_range]
+          
+          k <- k + n_entries
+        }
+      }
+      list(i = i_block, j = j_block, x = x_block)
+    }
+    
+    # Loop over blocks to fill preallocated vectors
+    for (i in seq_len(L)) {
+      print(paste0("Combining blocks in layer", i))
+      for (j in seq_len(L)) {
+
+
+        if (i == j) {
+          # Diagonal block
+          block_trip <- copy_block(diag_matrices[[i]], row_offsets[i], col_offsets[j])
+        } else {
+          # Off diagonal block
+          block_trip <- copy_block(off_diag_matrix, row_offsets[i], col_offsets[j])
+        }
+        
+        nnz_block <- length(block_trip$x)
+        idx_range <- pos:(pos + nnz_block - 1)
+        i_all[idx_range] <- block_trip$i
+        j_all[idx_range] <- block_trip$j
+        x_all[idx_range] <- block_trip$x
+        pos <- pos + nnz_block
+      }
+    }
+    
+    total_rows <- sum(row_dims)
+    total_cols <- sum(col_dims)
+    
+    sparseMatrix(i = i_all, j = j_all, x = x_all, dims = c(total_rows, total_cols))
+  }
+
+  MyColNames <- unname(unlist(lapply(Layers_List, function(x) unlist(colnames(x)))))
+  MyRowNames <- unname(unlist(lapply(Layers_List, function(x) unlist(rownames(x)))))
+
+  ## IDEM_MATRIX.
+  offdiag <- Matrix::Diagonal(N, x = (delta / (L - 1)) )
+  offdiag <- as(offdiag, "dgCMatrix")
+
+  TransMatrix <- build_block_matrix_dgCMatrix(Layers_List, offdiag)
+  print(paste0("Constructed non-normalized matrix"))
+
+  # Column normalize to account for nodes with zero edges in a layer
+  TransMatrix <- normalize.multiplex.adjacency(TransMatrix)
+
+  colnames(TransMatrix) <- MyColNames
+  rownames(TransMatrix) <- MyRowNames
+
+  # if (transpose) {
+  #   TransMatrix <- t(TransMatrix)
+  # }
+
+  TransMatrix <- as(TransMatrix, "dgCMatrix")
+
+  return(TransMatrix)
+}
+
+#' Computes the transition matrix of a heterogeneous multiplex network
+#'
+#' \code{compute.transition.matrix.heterogeneous} is a function to compute the
+#' transition matrix of a multiplex network provided as a \code{Multiplex} object.
+#'
+#' @usage compute.transition.matrix.heterogeneous(x,delta = 0.5,transpose = TRUE)
+#'
+#' @details The parameter \code{delta} sets the probability to change between
+#' layers at the next step. If delta = 0, the particle will always remain
+#' in the same layer after a non-restart iteration. On the other hand, if
+#' delta = 1, the particle will always change between layers, therefore
+#' not following the specific edges of each layer.
+#'
+#' @param x A \code{Multiplex} object describing a multiplex network generated
+#' by the function \code{create.multiplex}.
+#' @param delta A numeric value between 0 and 1. It sets the probability
+#' of performing inter-layer versus intra-layer transitions. It is set by
+#' default to 0.5. See more details below.
+#' @param tranpose A boolean flag. It is used to return a transposed a matrix
+#' that is transposed such that the columns are normalized.
+#'
+#' @return A square sparse adjacency matrix created with the \code{Matrix}
+#' package.
+#'
+#' @seealso \code{\link{create.multiplex},\link{row.normalize.matrix},
+#' \link{compute.transition.matrix.homogeneous}}
+#'
+#' @author Alberto Valdeolivas Urbelz \email{alvaldeolivas@@gmail.com}
+#'
+#' @examples
+#' m1 <- igraph::graph(c(1,2,1,3,2,3), directed = FALSE)
+#' m2 <- igraph::graph(c(1,3,2,3,3,4,1,4), directed = FALSE)
+#' multiObject <- create.multiplex(list(m1=m1,m2=m2))
+#' compute.transition.matrix.heterogeneous(multiObject)
+#'
+#'@import igraph
+#'@import Matrix
+#'@import parallel
+#'@import doParallel
+#'@import foreach
+#'@import iterators
+#'@importFrom methods as
+#'@export
+
+compute.transition.matrix.heterogeneous <- function(x,
+                                                    delta1 = 0.5,
+                                                    delta2 = 0.5,
+                                                    lambda = 0.5) {
+  if (!isMultiplexHet(x)) {
+    stop("Not a Multiplex Heterogeneous object")
+  }
+
+  if (delta1 > 1 || delta1 <= 0) {
+    stop("Delta1 should be between 0 and 1")
+  }
+
+  if (delta2 > 1 || delta2 <= 0) {
+    stop("Delta2 should be between 0 and 1")
+  }
+
+  if (lambda > 1 || lambda <= 0) {
+    stop("Lambda should be between 0 and 1")
+  }
+
+  # Compute transition matrix for homogeneous networks
+  Transition_Multiplex_Network1 <-
+    compute.transition.matrix.homogeneous(x$Multiplex1, delta1, FALSE)
+  Transition_Multiplex_Network2 <-
+    compute.transition.matrix.homogeneous(x$Multiplex2, delta2, FALSE)
+
+  # Normalize Supra Bipartite Matrix
+  Transition_Multiplex1_Multiplex2 <-
+    row.normalize.matrix(x$BipartiteNetwork)
+  Transition_Multiplex2_Multiplex1 <-
+    row.normalize.matrix(t(x$BipartiteNetwork))
+
+  # Scale each matrix
+  Transition_Multiplex_Network1 <- (1 - lambda) * Transition_Multiplex_Network1
+  Transition_Multiplex_Network2 <- (1 - lambda) * Transition_Multiplex_Network2
+  Transition_Multiplex1_Multiplex2 <- lambda * Transition_Multiplex1_Multiplex2
+  Transition_Multiplex2_Multiplex1 <- lambda * Transition_Multiplex2_Multiplex1
+
+  Transition_Multiplex_Heterogeneous_Matrix_1 <-
+    cbind(Transition_Multiplex_Network1, Transition_Multiplex1_Multiplex2)
+  Transition_Multiplex_Heterogeneous_Matrix_2 <-
+    cbind(Transition_Multiplex2_Multiplex1, Transition_Multiplex_Network2)
+  Transition_Multiplex_Heterogeneous_Matrix <-
+    rbind(Transition_Multiplex_Heterogeneous_Matrix_1,
+          Transition_Multiplex_Heterogeneous_Matrix_2)
+
+  Transition_Multiplex_Heterogeneous_Matrix <-
+    row.normalize.matrix(Transition_Multiplex_Heterogeneous_Matrix)
+  Transition_Multiplex_Heterogeneous_Matrix <-
+    t(Transition_Multiplex_Heterogeneous_Matrix)
+  
+  Transition_Multiplex_Heterogeneous_Matrix <- as(Transition_Multiplex_Heterogeneous_Matrix, "dgCMatrix")
+
+  return(Transition_Multiplex_Heterogeneous_Matrix)
 }
 
 ## Roxy Documentation comments
@@ -545,10 +919,12 @@ compute.transition.matrix <- function(x,lambda = 0.5, delta1=0.5,delta2=0.5)
     
     message("Computing adjacency matrix of the first Multiplex network...")
     AdjMatrix_Multiplex1 <- compute.adjacency.matrix(x$Multiplex1,delta1)
+    AdjMatrix_Multiplex1 <- normalize.multiplex.adjacency(AdjMatrix_Multiplex1)
     
     message("Computing adjacency matrix of the second Multiplex network...")
     ## We have to sort the adjacency matrix
     AdjMatrix_Multiplex2 <- compute.adjacency.matrix(x$Multiplex2,delta2)
+    AdjMatrix_Multiplex2 <- normalize.multiplex.adjacency(AdjMatrix_Multiplex2)
     
     ## Transition Matrix for the inter-subnetworks links
     message("Computing inter-subnetworks transitions...")
@@ -580,7 +956,7 @@ compute.transition.matrix <- function(x,lambda = 0.5, delta1=0.5,delta2=0.5)
         rbind(Transition_Multiplex_Heterogeneous_Matrix_1,
               Transition_Multiplex_Heterogeneous_Matrix_2)
     
-    return(Transition_Multiplex_Heterogeneous_Matrix)
+    return(t(Transition_Multiplex_Heterogeneous_Matrix))
 }
 
 ## Roxy Documentation comments
@@ -717,16 +1093,16 @@ Random.Walk.Restart.MultiplexHet <- function(...){
 #'@rdname Random.Walk.Restart.MultiplexHet
 #'@export
 Random.Walk.Restart.MultiplexHet.default <- function(x, MultiplexHet_Object, 
-    Multiplex1_Seeds,Multiplex2_Seeds, r=0.7,tau1,tau2,eta=0.5,
+    Multiplex1_Seeds, Multiplex2_Seeds, r=0.7,tau1,tau2,eta=0.5,
     MeanType="Geometric", DispResults="TopScores",...){
         
     ## We control the different values.
     if (!"dgCMatrix" %in% class(x)){
-        stop("Not a dgCMatrix object of Matrix package")
+      stop("Not a dgCMatrix object of Matrix package")
     }
     
     if (!isMultiplexHet(MultiplexHet_Object)) {
-        stop("Not a Multiplex Heterogeneous object")
+      stop("Not a Multiplex Heterogeneous object")
     }
         
     NumberLayers1 <- MultiplexHet_Object$Multiplex1$Number_of_Layers
@@ -741,147 +1117,134 @@ Random.Walk.Restart.MultiplexHet.default <- function(x, MultiplexHet_Object,
     MultiplexSeeds2 <- as.character(Multiplex2_Seeds)
         
     if (length(MultiplexSeeds1) < 1 & length(MultiplexSeeds2) < 1){
-        stop("You did not provided any seeds")
-    } else {
-        if (length(MultiplexSeeds1) >= NumberNodes1 | length(MultiplexSeeds2) >= 
-            NumberNodes2){
-            stop("The length of some of the vectors containing the seed nodes 
+      stop("You did not provided any seeds")
+    } 
+    if (length(MultiplexSeeds1) >= NumberNodes1 ||
+        length(MultiplexSeeds2) >= NumberNodes2) {
+      stop("The length of some of the vectors containing the seed nodes 
             is not correct")
-        }  else {
-            if (!all(MultiplexSeeds1 %in% All_nodes_Multiplex1)){
-                stop("Some of the  input seeds are not nodes of the first 
-               input network")
-            } else {
-                if (!all(All_nodes_Multiplex2 %in% All_nodes_Multiplex2)){
-                    stop("Some of the inputs seeds are not nodes of the second
-                        input network")
-                }
-            }
-        }
     }
-        
+    if (!all(MultiplexSeeds1 %in% All_nodes_Multiplex1)){
+      stop("Some of the input seeds are not nodes of the first input network")
+    } 
+    if (!all(All_nodes_Multiplex2 %in% All_nodes_Multiplex2)){
+      stop("Some of the inputs seeds are not nodes of the second input network")
+    } 
     if (r >= 1 || r <= 0) {
-        stop("Restart partameter should be between 0 and 1")
+      stop("Restart partameter should be between 0 and 1")
     }
-        
     if (eta >= 1 || eta <= 0) {
-        stop("Eta partameter should be between 0 and 1")
-    }
-        
-    if(missing(tau1)){
-        tau1 <- rep(1,NumberLayers1)/NumberLayers1
+      stop("Eta partameter should be between 0 and 1")
+    }   
+    if (missing(tau1)){
+      tau1 <- rep(1,NumberLayers1)/NumberLayers1
     } else {
-        tau1 <- as.numeric(tau1)
-        if (sum(tau1)/NumberLayers1 != 1) {
-            stop("The sum of the components of tau divided by the number of 
-                layers should be 1")}
+      tau1 <- as.numeric(tau1)
+      if (sum(tau1)/NumberLayers1 != 1) {
+        stop("The sum of the components of tau1 divided by the number of layers should be 1")
+      }
     }
-        
-    if(missing(tau2)){
-        tau2 <- rep(1,NumberLayers2)/NumberLayers2
+
+    if (missing(tau2)){
+      tau2 <- rep(1,NumberLayers2)/NumberLayers2
     } else {
-        tau2 <- as.numeric(tau2)
-        if (sum(tau2)/NumberLayers2 != 1) {
-            stop("The sum of the components of tau divided by the number of 
-            layers should be 1")}
+      tau2 <- as.numeric(tau2)
+      if (sum(tau2)/NumberLayers2 != 1) {
+        stop("The sum of the components of tau2 divided by the number of layers should be 1")
+      }
     }
-        
-    if(!(MeanType %in% c("Geometric","Arithmetic","Sum"))){
-        stop("The type mean should be Geometric, Arithmetic or Sum")
+
+    if (!(MeanType %in% c("Geometric","Arithmetic","Sum"))) {
+      stop("The type mean should be Geometric, Arithmetic or Sum")
     }
-        
-    if(!(DispResults %in% c("TopScores","Alphabetic"))){
-        stop("The way to display RWRM results should be TopScores or
-       Alphabetic")
+
+    if (!(DispResults %in% c("TopScores","Alphabetic"))) {
+      stop("The way to display RWRM results should be TopScores or Alphabetic")
     }
-        
+
     ## We define the threshold and the number maximum of iterations
     ## for the random walker.
     Threeshold <- 1e-10
     NetworkSize <- ncol(x)
-        
+
     ## We initialize the variables to control the flux in the RW algo.
     residue <- 1
     iter <- 1
-        
+
     ## We compute the scores for the different seeds.
     Seeds_Score <- get.seed.scores.multHet(Multiplex1_Seeds, Multiplex2_Seeds,eta,
         NumberLayers1,NumberLayers2,tau1,tau2)
-        
+
     ## We define the prox_vector(The vector we will move after the first
     ## RWR iteration. We start from The seed. We have to take in account
     ## that the walker with restart in some of the Seed genes,
     ## depending on the score we gave in that file).
     prox_vector <- matrix(0,nrow = NetworkSize,ncol=1)
-    
+
     prox_vector[which(colnames(x) %in% Seeds_Score[,1])] <- (Seeds_Score[,2])
-        
+
     prox_vector  <- prox_vector/sum(prox_vector)
     restart_vector <-  prox_vector
-        
-    while(residue >= Threeshold){
-            
-        old_prox_vector <- prox_vector
-        prox_vector <- (1-r)*(x %*% prox_vector) + r*restart_vector
-        residue <- sqrt(sum((prox_vector-old_prox_vector)^2))
-        iter <- iter + 1;
+
+    while (residue >= Threeshold) {
+      old_prox_vector <- prox_vector
+      prox_vector <- (1-r)*(x %*% prox_vector) + r*restart_vector
+      residue <- sqrt(sum((prox_vector-old_prox_vector)^2))
+      iter <- iter + 1;
     }
-        
+
     IndexSep <- NumberNodes1*NumberLayers1
     prox_vector_1 <- prox_vector[1:IndexSep,]
     prox_vector_2 <- prox_vector[(IndexSep+1):nrow(prox_vector),]
-        
+
     NodeNames1 <- gsub("_1$", "",names(prox_vector_1)[seq_len(NumberNodes1)])
     NodeNames2 <- gsub("_1$", "",names(prox_vector_2)[seq_len(NumberNodes2)])
-        
-    if (MeanType=="Geometric"){
-        rank_global1 <- geometric.mean(prox_vector_1,NumberLayers1,NumberNodes1)    
-        rank_global2 <- geometric.mean(prox_vector_2,NumberLayers2,NumberNodes2)   
+
+    if (MeanType=="Geometric") {
+      rank_global1 <- geometric.mean(prox_vector_1,NumberLayers1,NumberNodes1)    
+      rank_global2 <- geometric.mean(prox_vector_2,NumberLayers2,NumberNodes2)   
+    } else if (MeanType=="Arithmetic") {
+      rank_global1 <- regular.mean(prox_vector_1,NumberLayers1,NumberNodes1)    
+      rank_global2 <- regular.mean(prox_vector_2,NumberLayers2,NumberNodes2)     
     } else {
-        if (MeanType=="Arithmetic") {
-            rank_global1 <- regular.mean(prox_vector_1,NumberLayers1,NumberNodes1)    
-            rank_global2 <- regular.mean(prox_vector_2,NumberLayers2,NumberNodes2)     
-        } else {
-            rank_global1 <- sumValues(prox_vector_1,NumberLayers1,NumberNodes1)    
-            rank_global2 <- sumValues(prox_vector_2,NumberLayers2,NumberNodes2) 
-        }
+      rank_global1 <- sumValues(prox_vector_1,NumberLayers1,NumberNodes1)    
+      rank_global2 <- sumValues(prox_vector_2,NumberLayers2,NumberNodes2) 
     }
-        
+
     Global_results <- data.frame(NodeNames = c(NodeNames1,NodeNames2), 
         Score = c(rank_global1,rank_global2))
-    
+
     Multiplex1_results <-data.frame(NodeNames = NodeNames1,Score = rank_global1)
     Multiplex2_results <-data.frame(NodeNames = NodeNames2,Score = rank_global2)
     Seeds <- c(Multiplex1_Seeds, Multiplex2_Seeds)
-    
-    if (DispResults=="TopScores"){
-        ## We sort the nodes according to their score.
-        Global_results <- 
-            Global_results[with(Global_results, order(-Score, NodeNames)), ]
-        Multiplex1_results <-
-            Multiplex1_results[with(Multiplex1_results, order(-Score, NodeNames)),] 
-        Multiplex2_results <-
-            Multiplex2_results[with(Multiplex2_results, order(-Score, NodeNames)),] 
-        
-        ### We remove the seed from the individual networks 
-        Multiplex1_results <- 
-            Multiplex1_results[which(!Multiplex1_results$NodeNames %in% Seeds),]
-        Multiplex2_results <- 
-            Multiplex2_results[which(!Multiplex2_results$NodeNames %in% Seeds),]
-        
-        } else {
-            Global_results <- Global_results
-            Multiplex1_results <- Multiplex1_results
-            Multiplex2_results <- Multiplex2_results
-        }
-        
+
+    if (DispResults=="TopScores") {
+      ## We sort the nodes according to their score.
+      Global_results <- 
+          Global_results[with(Global_results, order(-Score, NodeNames)), ]
+      Multiplex1_results <-
+          Multiplex1_results[with(Multiplex1_results, order(-Score, NodeNames)),] 
+      Multiplex2_results <-
+          Multiplex2_results[with(Multiplex2_results, order(-Score, NodeNames)),] 
+
+      ### We remove the seed from the individual networks 
+      Multiplex1_results <- 
+          Multiplex1_results[which(!Multiplex1_results$NodeNames %in% Seeds),]
+      Multiplex2_results <- 
+          Multiplex2_results[which(!Multiplex2_results$NodeNames %in% Seeds),]      
+    } else {
+      Global_results <- Global_results
+      Multiplex1_results <- Multiplex1_results
+      Multiplex2_results <- Multiplex2_results
+    }
+
     rownames(Global_results) <- c()
-        
+
     RWRMH_ranking <- list(RWRMH_GlobalResults = Global_results, 
         RWRMH_Multiplex1 = Multiplex1_results, 
         RWRMH_Multiplex2 = Multiplex2_results,
         Seed_Nodes = Seeds)
-        
+
     class(RWRMH_ranking) <- "RWRMH_Results"
     return(RWRMH_ranking)
 }
